@@ -118,7 +118,13 @@ function createMcpServer(): Server {
       switch (name) {
         case "get_history": {
           const parsed = getHistoryArgsSchema.safeParse(args ?? {});
-          const limit = parsed.success ? parsed.data.limit : 10;
+          if (!parsed.success) {
+            return {
+              content: [{ type: "text", text: `Error: invalid arguments — ${parsed.error.message}` }],
+              isError: true,
+            };
+          }
+          const limit = parsed.data.limit;
 
           const recentSessions = await db.query.sessions.findMany({
             orderBy: [desc(sessions.date)],
@@ -269,7 +275,13 @@ function createMcpServer(): Server {
 
         case "get_volume_by_week": {
           const parsed = getVolumeByWeekArgsSchema.safeParse(args ?? {});
-          const weeks = parsed.success ? parsed.data.weeks : 8;
+          if (!parsed.success) {
+            return {
+              content: [{ type: "text", text: `Error: invalid arguments — ${parsed.error.message}` }],
+              isError: true,
+            };
+          }
+          const weeks = parsed.data.weeks;
 
           const rows = await db.execute<VolumeRow>(sql`
             SELECT
