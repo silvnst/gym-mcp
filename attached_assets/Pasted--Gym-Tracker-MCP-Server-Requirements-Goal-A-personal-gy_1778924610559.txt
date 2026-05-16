@@ -1,0 +1,253 @@
+# Gym Tracker — MCP Server Requirements
+
+-----
+
+## Goal
+
+A personal gym tracking MCP server that connects to Claude.ai. Once installed, I can log sessions, view history, and analyse my training directly in Claude.ai — no separate app needed.
+
+-----
+
+## What to Build
+
+A single backend service that:
+
+1. Persists gym workout data in a database
+1. Exposes that data via the Model Context Protocol (MCP) over HTTP/SSE transport so Claude.ai can connect to it
+
+No frontend. No user interface. Pure backend.
+
+-----
+
+## MCP Transport Requirement
+
+Claude.ai requires a **remote MCP server** using **HTTP + SSE (Server-Sent Events)** transport.
+
+The server must expose two endpoints:
+
+- `GET /sse` — SSE connection endpoint (Claude.ai connects here)
+- `POST /messages` — message endpoint (Claude.ai sends tool calls here)
+
+Use the official MCP SDK for whichever language/runtime is chosen.
+
+-----
+
+## Authentication
+
+Every request must be protected with a static API key passed as a bearer token:
+
+```
+Authorization: Bearer <API_KEY>
+```
+
+Return HTTP 401 if missing or incorrect.
+
+-----
+
+## Data Model
+
+Three entities:
+
+```
+Workout
+  └── has many Exercises
+        └── has many Sets
+```
+
+**Workout**
+
+- id (unique identifier, auto-generated)
+- date (date only, no time)
+- name (text, e.g. “Gemini A”)
+- notes (text, optional)
+- created_at (timestamp)
+
+**Exercise**
+
+- id (unique identifier, auto-generated)
+- workout_id (foreign key → Workout)
+- name (text, e.g. “Back Squat”)
+- sort_order (integer, preserves order within session)
+
+**Set**
+
+- id (unique identifier, auto-generated)
+- exercise_id (foreign key → Exercise)
+- set_number (integer)
+- reps (integer, optional)
+- weight_kg (decimal, optional)
+
+Deleting a Workout must cascade-delete its Exercises and Sets.
+
+-----
+
+## MCP Tools
+
+### 1. `log_session`
+
+Logs a complete workout session in a single call.
+
+**Input:**
+
+```json
+{
+  "date": "2026-05-16",
+  "name": "Gemini A",
+  "notes": "Optional free text",
+  "exercises": [
+    {
+      "name": "Back Squat",
+      "sets": [
+        { "reps": 5, "weight_kg": 102.5 },
+        { "reps": 5, "weight_kg": 102.5 }
+      ]
+    }
+  ]
+}
+```
+
+`date`, `name`, and `exercises` are required. `notes` is optional.
+
+**Behaviour:** Persist the workout, its exercises (in order), and all sets atomically.
+
+**Returns:** `{ "success": true, "workout_id": "..." }`
+
+-----
+
+### 2. `get_history`
+
+Returns recent sessions with full detail (exercises and sets included).
+
+**Input:**
+
+```json
+{
+  "limit": 10
+}
+```
+
+Optional. Default: 10. Max: 50. Ordered by date descending.
+
+**Returns:**
+
+```json
+[
+  {
+    "id": "...",
+    "date": "2026-05-16",
+    "name": "Gemini A",
+    "notes": "",
+    "exercises": [
+      {
+        "name": "Back Squat",
+        "sets": [
+          { "set_number": 1, "reps": 5, "weight_kg": 102.5 }
+        ]
+      }
+    ]
+  }
+]
+```
+
+-----
+
+### 3. `get_session_detail`
+
+Returns full detail of one specific session.
+
+**Input:**
+
+```json
+{
+  "workout_id": "..."
+}
+```
+
+**Returns:** Same structure as a single item from `get_history`.
+
+-----
+
+### 4. `delete_session`
+
+Deletes a session and all associated data.
+
+**Input:**
+
+```json
+{
+  "workout_id": "..."
+}
+```
+
+**Returns:** `{ "success": true }`
+
+-----
+
+### 5. `get_prs`
+
+Returns the personal record (heaviest weight) for every exercise ever logged, with reps and date of that set.
+
+**Input:** none
+
+**Returns:**
+
+```json
+[
+  {
+    "exercise": "Back Squat",
+    "weight_kg": 107.5,
+    "reps": 3,
+    "date": "2026-04-10"
+  }
+]
+```
+
+Ordered alphabetically by exercise name.
+
+-----
+
+## Environment Variables
+
+```
+API_KEY        static secret to authenticate MCP requests
+DATABASE_URL   connection string for the database
+PORT           port to listen on
+```
+
+-----
+
+## Error Handling
+
+- All tool handlers must catch errors and return clean error messages to the MCP client
+- Do not expose stack traces externally
+- Invalid input or unknown IDs should return descriptive error messages
+
+-----
+
+## Deployment
+
+- Must be reachable via a stable public HTTPS URL
+- Must stay alive continuously (no sleep on inactivity)
+- Final MCP URL to enter in Claude.ai: `https://<your-host>/sse`
+
+-----
+
+## Connecting to Claude.ai
+
+1. Go to **Claude.ai → Settings → Connectors**
+1. Click **Add custom connector**
+1. Enter: `https://<your-host>/sse`
+1. Set header: `Authorization: Bearer <API_KEY>`
+1. Claude discovers all tools automatically
+
+-----
+
+## Example Conversations After Setup
+
+> “Log today’s session: Gemini A — back squat 3×5 at 102.5kg, RDL 3×8 at 80kg, face pulls 3×15 at 20kg”
+
+> “What are my current PRs?”
+
+> “How has my squat progressed over the last month?”
+
+> “Delete yesterday’s session”

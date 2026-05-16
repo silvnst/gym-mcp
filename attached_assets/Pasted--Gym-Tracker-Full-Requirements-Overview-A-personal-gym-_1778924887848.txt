@@ -1,0 +1,311 @@
+# Gym Tracker — Full Requirements
+
+-----
+
+## Overview
+
+A personal gym tracking application with three parts:
+
+1. **Frontend app** — plan workouts, execute sessions, track progress
+1. **Backend API** — stores all data, serves the frontend
+1. **MCP server** — read-only access for Claude.ai to analyse training data
+
+-----
+
+## User Flows
+
+### 1. Plan a Workout
+
+The user creates reusable workout plans (e.g. “Gemini A”). Each plan contains a list of exercises, each with a target number of sets, reps, and weight. Plans are templates — they do not record actual performance.
+
+### 2. Execute a Workout
+
+The user starts a session by selecting a plan. The app loads the plan as a template and guides the user through each exercise. For each set, the user logs the actual reps and weight performed (which may differ from the target). The session is saved when the user finishes.
+
+### 3. View History
+
+The user can browse past sessions, see what they lifted, and compare actual vs. planned performance.
+
+-----
+
+## Data Model
+
+```
+Plan
+  └── has many PlanExercises (ordered)
+
+Session
+  ├── optionally based on a Plan
+  └── has many SessionExercises (ordered)
+        └── has many Sets (actual performance)
+```
+
+### Plan
+
+|Field     |Type             |Notes          |
+|----------|-----------------|---------------|
+|id        |unique identifier|auto-generated |
+|name      |text             |e.g. “Gemini A”|
+|notes     |text             |optional       |
+|created_at|timestamp        |               |
+
+### PlanExercise
+
+|Field           |Type              |Notes                            |
+|----------------|------------------|---------------------------------|
+|id              |unique identifier |auto-generated                   |
+|plan_id         |foreign key → Plan|cascade delete                   |
+|name            |text              |e.g. “Back Squat”                |
+|sort_order      |integer           |preserves exercise order         |
+|target_sets     |integer           |                                 |
+|target_reps     |integer           |                                 |
+|target_weight_kg|decimal           |optional                         |
+|notes           |text              |optional (e.g. “pause at bottom”)|
+
+### Session
+
+|Field     |Type              |Notes                           |
+|----------|------------------|--------------------------------|
+|id        |unique identifier |auto-generated                  |
+|plan_id   |foreign key → Plan|optional — session can be ad-hoc|
+|date      |date              |                                |
+|name      |text              |copied from plan name, editable |
+|notes     |text              |optional                        |
+|created_at|timestamp         |                                |
+
+### SessionExercise
+
+|Field           |Type                      |Notes                          |
+|----------------|--------------------------|-------------------------------|
+|id              |unique identifier         |auto-generated                 |
+|session_id      |foreign key → Session     |cascade delete                 |
+|plan_exercise_id|foreign key → PlanExercise|optional — for ad-hoc exercises|
+|name            |text                      |                               |
+|sort_order      |integer                   |                               |
+|target_sets     |integer                   |copied from plan, optional     |
+|target_reps     |integer                   |copied from plan, optional     |
+|target_weight_kg|decimal                   |copied from plan, optional     |
+
+### Set (actual performance)
+
+|Field              |Type                         |Notes                |
+|-------------------|-----------------------------|---------------------|
+|id                 |unique identifier            |auto-generated       |
+|session_exercise_id|foreign key → SessionExercise|cascade delete       |
+|set_number         |integer                      |                     |
+|reps               |integer                      |actual reps performed|
+|weight_kg          |decimal                      |actual weight used   |
+
+-----
+
+## Frontend — Screens
+
+### Plans
+
+- List all plans
+- Create a new plan: name, add exercises with target sets / reps / weight
+- Edit or delete a plan
+
+### Start Session
+
+- Choose a plan to base the session on, or start ad-hoc
+- When based on a plan: pre-populate exercises and targets as a guide
+
+### Execute Session (active screen)
+
+- Show exercises one at a time or all listed
+- For each exercise: show target (sets × reps @ weight) and log actual sets inline
+- Each set: input actual reps and weight, mark as done
+- Option to add an extra set or skip a set
+- Finish button saves the complete session
+
+### History
+
+- List past sessions (date, name, summary)
+- Tap a session to see full detail: every exercise, every set, actual vs. target
+
+-----
+
+## Backend API
+
+Standard REST API consumed by the frontend.
+
+### Plans
+
+```
+GET    /plans               list all plans
+POST   /plans               create a plan (with exercises)
+GET    /plans/:id           get plan detail
+PUT    /plans/:id           update a plan
+DELETE /plans/:id           delete a plan
+```
+
+### Sessions
+
+```
+GET    /sessions            list sessions (paginated, newest first)
+POST   /sessions            create a session
+GET    /sessions/:id        get session detail
+DELETE /sessions/:id        delete a session
+POST   /sessions/:id/sets   add a set to a session exercise
+PUT    /sets/:id            update a set
+DELETE /sets/:id            delete a set
+```
+
+-----
+
+## MCP Server — Read Only
+
+Claude.ai connects to the MCP server to read training data for analysis. The MCP server must not allow Claude to write, modify, or delete any data — it is strictly read-only.
+
+### Transport
+
+HTTP + SSE (Server-Sent Events). Required by Claude.ai for remote MCP servers.
+
+Endpoints:
+
+- `GET /sse` — Claude.ai connects here
+- `POST /messages` — Claude.ai sends tool calls here
+
+### Authentication
+
+All requests require:
+
+```
+Authorization: Bearer <MCP_API_KEY>
+```
+
+Return HTTP 401 if missing or wrong.
+
+-----
+
+## MCP Tools (Read Only)
+
+### `get_history`
+
+Recent sessions with full detail.
+
+**Input:**
+
+```json
+{ "limit": 10 }
+```
+
+Optional. Default 10, max 50. Ordered by date descending.
+
+**Returns:** Array of sessions, each with exercises and sets (actual and target values).
+
+-----
+
+### `get_session_detail`
+
+Full detail of one session.
+
+**Input:**
+
+```json
+{ "session_id": "..." }
+```
+
+**Returns:** Single session object with all exercises and sets.
+
+-----
+
+### `get_plans`
+
+All workout plans.
+
+**Input:** none
+
+**Returns:** Array of plans with their exercises and targets.
+
+-----
+
+### `get_prs`
+
+Personal record per exercise: heaviest weight ever logged in a set, with reps and date.
+
+**Input:** none
+
+**Returns:**
+
+```json
+[
+  {
+    "exercise": "Back Squat",
+    "weight_kg": 107.5,
+    "reps": 3,
+    "date": "2026-04-10"
+  }
+]
+```
+
+Ordered alphabetically.
+
+-----
+
+### `get_volume_by_week`
+
+Total training volume (kg lifted = sets × reps × weight) aggregated by week, per exercise.
+
+**Input:**
+
+```json
+{ "weeks": 8 }
+```
+
+Optional. Default 8 weeks.
+
+**Returns:**
+
+```json
+[
+  {
+    "week": "2026-05-12",
+    "exercise": "Back Squat",
+    "total_volume_kg": 4500
+  }
+]
+```
+
+-----
+
+## Environment Variables
+
+```
+DATABASE_URL      connection string for the database
+MCP_API_KEY       static secret for Claude.ai authentication
+PORT              port the service listens on
+```
+
+-----
+
+## Deployment
+
+- Frontend and backend can be deployed together or separately
+- MCP server can be a separate service or part of the backend
+- All services must be reachable via stable public HTTPS URLs
+- MCP server must stay alive continuously (no sleep on inactivity)
+
+-----
+
+## Connecting Claude.ai
+
+1. **Claude.ai → Settings → Connectors → Add custom connector**
+1. Enter SSE URL: `https://<your-mcp-host>/sse`
+1. Set header: `Authorization: Bearer <MCP_API_KEY>`
+1. Claude discovers all tools automatically
+
+-----
+
+## Example Claude.ai Conversations
+
+> “How has my squat progressed over the last 6 weeks?”
+
+> “What are my current PRs across all exercises?”
+
+> “Which muscle groups am I training the most? Any imbalances?”
+
+> “Compare my planned vs actual performance in the last 3 sessions”
+
+> “Based on my recent volume, what should I focus on next week?”
