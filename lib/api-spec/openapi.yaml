@@ -1,15 +1,21 @@
 openapi: 3.1.0
 info:
-  # Do not change the title, if the title changes, the import paths will be broken
   title: Api
-  version: 0.1.0
-  description: API specification
+  version: 0.2.0
+  description: Gym Tracker API
 servers:
   - url: /api
     description: Base API path
 tags:
   - name: health
     description: Health operations
+  - name: plans
+    description: Workout plan operations
+  - name: sessions
+    description: Workout session operations
+  - name: sets
+    description: Set operations
+
 paths:
   /healthz:
     get:
@@ -24,6 +30,310 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+
+  /plans:
+    get:
+      operationId: listPlans
+      tags: [plans]
+      summary: List all plans
+      responses:
+        "200":
+          description: List of plans
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/PlanWithExercises"
+    post:
+      operationId: createPlan
+      tags: [plans]
+      summary: Create a plan with exercises
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreatePlanBody"
+      responses:
+        "201":
+          description: Created plan
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PlanWithExercises"
+        "400":
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /plans/{id}:
+    get:
+      operationId: getPlan
+      tags: [plans]
+      summary: Get plan detail
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Plan detail
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PlanWithExercises"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    put:
+      operationId: updatePlan
+      tags: [plans]
+      summary: Update a plan
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreatePlanBody"
+      responses:
+        "200":
+          description: Updated plan
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PlanWithExercises"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    delete:
+      operationId: deletePlan
+      tags: [plans]
+      summary: Delete a plan
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Deleted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessResponse"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /sessions:
+    get:
+      operationId: listSessions
+      tags: [sessions]
+      summary: List sessions (newest first)
+      parameters:
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 20
+        - name: offset
+          in: query
+          schema:
+            type: integer
+            default: 0
+      responses:
+        "200":
+          description: List of sessions
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/SessionSummary"
+    post:
+      operationId: createSession
+      tags: [sessions]
+      summary: Create a session
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateSessionBody"
+      responses:
+        "201":
+          description: Created session
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SessionWithDetail"
+        "400":
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /sessions/{id}:
+    get:
+      operationId: getSession
+      tags: [sessions]
+      summary: Get session detail
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Session detail
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SessionWithDetail"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    delete:
+      operationId: deleteSession
+      tags: [sessions]
+      summary: Delete a session
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Deleted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessResponse"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /sessions/{id}/sets:
+    post:
+      operationId: addSet
+      tags: [sessions]
+      summary: Add a set to a session exercise
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateSetBody"
+      responses:
+        "201":
+          description: Created set
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SetRecord"
+        "400":
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /sets/{id}:
+    put:
+      operationId: updateSet
+      tags: [sets]
+      summary: Update a set
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateSetBody"
+      responses:
+        "200":
+          description: Updated set
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SetRecord"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    delete:
+      operationId: deleteSet
+      tags: [sets]
+      summary: Delete a set
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Deleted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessResponse"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
 components:
   schemas:
     HealthStatus:
@@ -34,3 +344,288 @@ components:
       required:
         - status
 
+    ErrorResponse:
+      type: object
+      properties:
+        error:
+          type: string
+      required:
+        - error
+
+    SuccessResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+      required:
+        - success
+
+    PlanExerciseRecord:
+      type: object
+      properties:
+        id:
+          type: string
+        planId:
+          type: string
+        name:
+          type: string
+        sortOrder:
+          type: integer
+        targetSets:
+          type: integer
+        targetReps:
+          type: integer
+        targetWeightKg:
+          type: number
+          nullable: true
+        notes:
+          type: string
+          nullable: true
+      required:
+        - id
+        - planId
+        - name
+        - sortOrder
+        - targetSets
+        - targetReps
+
+    PlanWithExercises:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        notes:
+          type: string
+          nullable: true
+        createdAt:
+          type: string
+        exercises:
+          type: array
+          items:
+            $ref: "#/components/schemas/PlanExerciseRecord"
+      required:
+        - id
+        - name
+        - createdAt
+        - exercises
+
+    CreatePlanExerciseBody:
+      type: object
+      properties:
+        name:
+          type: string
+        sortOrder:
+          type: integer
+        targetSets:
+          type: integer
+        targetReps:
+          type: integer
+        targetWeightKg:
+          type: number
+          nullable: true
+        notes:
+          type: string
+          nullable: true
+      required:
+        - name
+        - sortOrder
+        - targetSets
+        - targetReps
+
+    CreatePlanBody:
+      type: object
+      properties:
+        name:
+          type: string
+        notes:
+          type: string
+          nullable: true
+        exercises:
+          type: array
+          items:
+            $ref: "#/components/schemas/CreatePlanExerciseBody"
+      required:
+        - name
+        - exercises
+
+    SetRecord:
+      type: object
+      properties:
+        id:
+          type: string
+        sessionExerciseId:
+          type: string
+        setNumber:
+          type: integer
+        reps:
+          type: integer
+          nullable: true
+        weightKg:
+          type: number
+          nullable: true
+      required:
+        - id
+        - sessionExerciseId
+        - setNumber
+
+    SessionExerciseWithSets:
+      type: object
+      properties:
+        id:
+          type: string
+        sessionId:
+          type: string
+        planExerciseId:
+          type: string
+          nullable: true
+        name:
+          type: string
+        sortOrder:
+          type: integer
+        targetSets:
+          type: integer
+          nullable: true
+        targetReps:
+          type: integer
+          nullable: true
+        targetWeightKg:
+          type: number
+          nullable: true
+        sets:
+          type: array
+          items:
+            $ref: "#/components/schemas/SetRecord"
+      required:
+        - id
+        - sessionId
+        - name
+        - sortOrder
+        - sets
+
+    SessionSummary:
+      type: object
+      properties:
+        id:
+          type: string
+        planId:
+          type: string
+          nullable: true
+        date:
+          type: string
+        name:
+          type: string
+        notes:
+          type: string
+          nullable: true
+        createdAt:
+          type: string
+      required:
+        - id
+        - date
+        - name
+        - createdAt
+
+    SessionWithDetail:
+      type: object
+      properties:
+        id:
+          type: string
+        planId:
+          type: string
+          nullable: true
+        date:
+          type: string
+        name:
+          type: string
+        notes:
+          type: string
+          nullable: true
+        createdAt:
+          type: string
+        exercises:
+          type: array
+          items:
+            $ref: "#/components/schemas/SessionExerciseWithSets"
+      required:
+        - id
+        - date
+        - name
+        - createdAt
+        - exercises
+
+    CreateSessionExerciseBody:
+      type: object
+      properties:
+        name:
+          type: string
+        sortOrder:
+          type: integer
+        targetSets:
+          type: integer
+          nullable: true
+        targetReps:
+          type: integer
+          nullable: true
+        targetWeightKg:
+          type: number
+          nullable: true
+        planExerciseId:
+          type: string
+          nullable: true
+      required:
+        - name
+        - sortOrder
+
+    CreateSessionBody:
+      type: object
+      properties:
+        planId:
+          type: string
+          nullable: true
+        date:
+          type: string
+        name:
+          type: string
+        notes:
+          type: string
+          nullable: true
+        exercises:
+          type: array
+          nullable: true
+          items:
+            $ref: "#/components/schemas/CreateSessionExerciseBody"
+      required:
+        - date
+        - name
+
+    CreateSetBody:
+      type: object
+      properties:
+        sessionExerciseId:
+          type: string
+        setNumber:
+          type: integer
+        reps:
+          type: integer
+          nullable: true
+        weightKg:
+          type: number
+          nullable: true
+      required:
+        - sessionExerciseId
+        - setNumber
+
+    UpdateSetBody:
+      type: object
+      properties:
+        reps:
+          type: integer
+          nullable: true
+        weightKg:
+          type: number
+          nullable: true
+        setNumber:
+          type: integer
+          nullable: true
