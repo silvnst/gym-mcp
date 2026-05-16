@@ -6,7 +6,14 @@ import {
   CallToolRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
 import { desc, eq, sql } from "drizzle-orm";
-import { db, sessions, sessionExercises, sets, plans, planExercises } from "@workspace/db";
+import { z } from "zod";
+import {
+  db,
+  sessions,
+  sessionExercises,
+  sets,
+  plans,
+} from "@workspace/db";
 import { mcpAuth } from "../middlewares/mcpAuth.js";
 import { logger } from "../lib/logger.js";
 
@@ -17,6 +24,21 @@ function numOrNull(v: string | null | undefined): number | null {
   const n = parseFloat(v);
   return isNaN(n) ? null : n;
 }
+
+const getHistoryArgsSchema = z.object({
+  limit: z.number().int().min(1).max(50).default(10),
+});
+
+const getSessionDetailArgsSchema = z.object({
+  session_id: z.string().min(1),
+});
+
+const getVolumeByWeekArgsSchema = z.object({
+  weeks: z.number().int().min(1).max(52).default(8),
+});
+
+type PrRow = { exercise: string; weight_kg: string; reps: number | null; date: string };
+type VolumeRow = { week: Date | string; exercise: string; total_volume_kg: string };
 
 function createMcpServer(): Server {
   const server = new Server(
@@ -95,10 +117,8 @@ function createMcpServer(): Server {
     try {
       switch (name) {
         case "get_history": {
-          const limit = Math.min(
-            Math.max(1, Number((args as any)?.limit ?? 10)),
-            50,
-          );
+          const parsed = getHistoryArgsSchema.safeParse(args ?? {});
+          const limit = parsed.success ? parsed.data.limit : 10;
 
           const recentSessions = await db.query.sessions.findMany({
             orderBy: [desc(sessions.date)],
@@ -137,13 +157,15 @@ function createMcpServer(): Server {
         }
 
         case "get_session_detail": {
-          const sessionId = (args as any)?.session_id;
-          if (!sessionId || typeof sessionId !== "string") {
+          const parsed = getSessionDetailArgsSchema.safeParse(args ?? {});
+          if (!parsed.success) {
             return {
               content: [{ type: "text", text: "Error: session_id is required" }],
               isError: true,
             };
           }
+
+          const { session_id: sessionId } = parsed.data;
 
           const session = await db.query.sessions.findFirst({
             where: eq(sessions.id, sessionId),
@@ -220,7 +242,7 @@ function createMcpServer(): Server {
         }
 
         case "get_prs": {
-          const rows = await db.execute(sql`
+          const rows = await db.execute<PrRow>(sql`
             SELECT DISTINCT ON (se.name)
               se.name AS exercise,
               s.weight_kg::float AS weight_kg,
@@ -233,7 +255,7 @@ function createMcpServer(): Server {
             ORDER BY se.name ASC, s.weight_kg DESC
           `);
 
-          const result = rows.rows.map((r: any) => ({
+          const result = rows.rows.map((r) => ({
             exercise: r.exercise,
             weight_kg: parseFloat(r.weight_kg),
             reps: r.reps,
@@ -246,9 +268,10 @@ function createMcpServer(): Server {
         }
 
         case "get_volume_by_week": {
-          const weeks = Math.min(Math.max(1, Number((args as any)?.weeks ?? 8)), 52);
+          const parsed = getVolumeByWeekArgsSchema.safeParse(args ?? {});
+          const weeks = parsed.success ? parsed.data.weeks : 8;
 
-          const rows = await db.execute(sql`
+          const rows = await db.execute<VolumeRow>(sql`
             SELECT
               date_trunc('week', sess.date::timestamp)::date AS week,
               se.name AS exercise,
@@ -264,7 +287,7 @@ function createMcpServer(): Server {
             ORDER BY 1 ASC, 2 ASC
           `);
 
-          const result = rows.rows.map((r: any) => ({
+          const result = rows.rows.map((r) => ({
             week: r.week instanceof Date ? r.week.toISOString().split("T")[0] : r.week,
             exercise: r.exercise,
             total_volume_kg: parseFloat(r.total_volume_kg),

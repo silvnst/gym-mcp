@@ -7,6 +7,9 @@ import {
   sessions,
   sessionExercises,
   sets,
+  type Session,
+  type SessionExercise,
+  type Set,
 } from "@workspace/db";
 
 const router: IRouter = Router();
@@ -15,6 +18,45 @@ function numOrNull(v: string | null | undefined): number | null {
   if (v == null) return null;
   const n = parseFloat(v);
   return isNaN(n) ? null : n;
+}
+
+type SessionExerciseWithSets = SessionExercise & { sets: Set[] };
+type SessionWithDetail = Session & { sessionExercises: SessionExerciseWithSets[] };
+
+function serializeSet(s: Set) {
+  return {
+    id: s.id,
+    sessionExerciseId: s.sessionExerciseId,
+    setNumber: s.setNumber,
+    reps: s.reps,
+    weightKg: numOrNull(s.weightKg),
+  };
+}
+
+function serializeSessionExercise(se: SessionExerciseWithSets) {
+  return {
+    id: se.id,
+    sessionId: se.sessionId,
+    planExerciseId: se.planExerciseId,
+    name: se.name,
+    sortOrder: se.sortOrder,
+    targetSets: se.targetSets,
+    targetReps: se.targetReps,
+    targetWeightKg: numOrNull(se.targetWeightKg),
+    sets: se.sets.map(serializeSet),
+  };
+}
+
+function serializeSession(session: SessionWithDetail) {
+  return {
+    id: session.id,
+    planId: session.planId,
+    date: session.date,
+    name: session.name,
+    notes: session.notes,
+    createdAt: session.createdAt,
+    exercises: session.sessionExercises.map(serializeSessionExercise),
+  };
 }
 
 async function getSessionWithDetail(sessionId: string) {
@@ -33,34 +75,6 @@ async function getSessionWithDetail(sessionId: string) {
   return serializeSession(session);
 }
 
-function serializeSession(session: any) {
-  return {
-    id: session.id,
-    planId: session.planId,
-    date: session.date,
-    name: session.name,
-    notes: session.notes,
-    createdAt: session.createdAt,
-    exercises: (session.sessionExercises ?? []).map((se: any) => ({
-      id: se.id,
-      sessionId: se.sessionId,
-      planExerciseId: se.planExerciseId,
-      name: se.name,
-      sortOrder: se.sortOrder,
-      targetSets: se.targetSets,
-      targetReps: se.targetReps,
-      targetWeightKg: numOrNull(se.targetWeightKg),
-      sets: (se.sets ?? []).map((s: any) => ({
-        id: s.id,
-        sessionExerciseId: s.sessionExerciseId,
-        setNumber: s.setNumber,
-        reps: s.reps,
-        weightKg: numOrNull(s.weightKg),
-      })),
-    })),
-  };
-}
-
 const createSessionExerciseSchema = z.object({
   name: z.string().min(1),
   sortOrder: z.number().int(),
@@ -77,6 +91,23 @@ const createSessionSchema = z.object({
   notes: z.string().nullable().optional(),
   exercises: z.array(createSessionExerciseSchema).nullable().optional(),
 });
+
+type CreateSessionExercise = z.infer<typeof createSessionExerciseSchema>;
+
+function buildSessionExerciseValues(
+  exercises: CreateSessionExercise[],
+  sessionId: string,
+) {
+  return exercises.map((ex, i) => ({
+    sessionId,
+    planExerciseId: ex.planExerciseId ?? null,
+    name: ex.name,
+    sortOrder: ex.sortOrder ?? i,
+    targetSets: ex.targetSets ?? null,
+    targetReps: ex.targetReps ?? null,
+    targetWeightKg: ex.targetWeightKg != null ? ex.targetWeightKg.toString() : null,
+  }));
+}
 
 router.get("/sessions", async (req, res) => {
   try {
@@ -99,7 +130,7 @@ router.get("/sessions", async (req, res) => {
         createdAt: s.createdAt,
       })),
     );
-  } catch (err) {
+  } catch {
     res.status(500).json({ error: "Failed to list sessions" });
   }
 });
@@ -116,29 +147,13 @@ router.post("/sessions", async (req, res) => {
   try {
     const [session] = await db
       .insert(sessions)
-      .values({ planId, date, name, notes })
+      .values({ planId: planId ?? null, date, name, notes: notes ?? null })
       .returning();
 
-    let exercisesToInsert: Array<{
-      sessionId: string;
-      planExerciseId?: string | null;
-      name: string;
-      sortOrder: number;
-      targetSets?: number | null;
-      targetReps?: number | null;
-      targetWeightKg?: string | null;
-    }> = [];
+    let exercisesToInsert: ReturnType<typeof buildSessionExerciseValues> = [];
 
     if (bodyExercises && bodyExercises.length > 0) {
-      exercisesToInsert = bodyExercises.map((ex, i) => ({
-        sessionId: session.id,
-        planExerciseId: ex.planExerciseId,
-        name: ex.name,
-        sortOrder: ex.sortOrder ?? i,
-        targetSets: ex.targetSets,
-        targetReps: ex.targetReps,
-        targetWeightKg: ex.targetWeightKg?.toString(),
-      }));
+      exercisesToInsert = buildSessionExerciseValues(bodyExercises, session.id);
     } else if (planId) {
       const plan = await db.query.plans.findFirst({
         where: eq(plans.id, planId),
@@ -165,7 +180,7 @@ router.post("/sessions", async (req, res) => {
 
     const result = await getSessionWithDetail(session.id);
     res.status(201).json(result);
-  } catch (err) {
+  } catch {
     res.status(500).json({ error: "Failed to create session" });
   }
 });
@@ -178,7 +193,7 @@ router.get("/sessions/:id", async (req, res) => {
       return;
     }
     res.json(session);
-  } catch (err) {
+  } catch {
     res.status(500).json({ error: "Failed to get session" });
   }
 });
@@ -194,7 +209,7 @@ router.delete("/sessions/:id", async (req, res) => {
     }
     await db.delete(sessions).where(eq(sessions.id, req.params.id!));
     res.json({ success: true });
-  } catch (err) {
+  } catch {
     res.status(500).json({ error: "Failed to delete session" });
   }
 });
@@ -229,9 +244,7 @@ router.post("/sessions/:id/sets", async (req, res) => {
       where: eq(sessionExercises.id, sessionExerciseId),
     });
     if (!se || se.sessionId !== sessionId) {
-      res
-        .status(404)
-        .json({ error: "Session exercise not found in this session" });
+      res.status(404).json({ error: "Session exercise not found in this session" });
       return;
     }
 
@@ -240,19 +253,13 @@ router.post("/sessions/:id/sets", async (req, res) => {
       .values({
         sessionExerciseId,
         setNumber,
-        reps,
-        weightKg: weightKg?.toString(),
+        reps: reps ?? null,
+        weightKg: weightKg != null ? weightKg.toString() : null,
       })
       .returning();
 
-    res.status(201).json({
-      id: newSet.id,
-      sessionExerciseId: newSet.sessionExerciseId,
-      setNumber: newSet.setNumber,
-      reps: newSet.reps,
-      weightKg: numOrNull(newSet.weightKg),
-    });
-  } catch (err) {
+    res.status(201).json(serializeSet(newSet));
+  } catch {
     res.status(500).json({ error: "Failed to add set" });
   }
 });

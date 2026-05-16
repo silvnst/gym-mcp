@@ -1,7 +1,7 @@
 import { Router, type IRouter } from "express";
 import { eq } from "drizzle-orm";
 import { z } from "zod";
-import { db, sets } from "@workspace/db";
+import { db, sets, type Set } from "@workspace/db";
 
 const router: IRouter = Router();
 
@@ -11,11 +11,35 @@ function numOrNull(v: string | null | undefined): number | null {
   return isNaN(n) ? null : n;
 }
 
+function serializeSet(s: Set) {
+  return {
+    id: s.id,
+    sessionExerciseId: s.sessionExerciseId,
+    setNumber: s.setNumber,
+    reps: s.reps,
+    weightKg: numOrNull(s.weightKg),
+  };
+}
+
 const updateSetSchema = z.object({
   reps: z.number().int().nullable().optional(),
   weightKg: z.number().nullable().optional(),
-  setNumber: z.number().int().min(1).nullable().optional(),
+  setNumber: z.number().int().min(1).optional(),
 });
+
+type UpdateSetInput = z.infer<typeof updateSetSchema>;
+
+function buildSetUpdates(data: UpdateSetInput): Partial<{
+  reps: number | null;
+  weightKg: string | null;
+  setNumber: number;
+}> {
+  const updates: Partial<{ reps: number | null; weightKg: string | null; setNumber: number }> = {};
+  if (data.reps !== undefined) updates.reps = data.reps;
+  if (data.weightKg !== undefined) updates.weightKg = data.weightKg != null ? data.weightKg.toString() : null;
+  if (data.setNumber !== undefined) updates.setNumber = data.setNumber;
+  return updates;
+}
 
 router.put("/sets/:id", async (req, res) => {
   const parsed = updateSetSchema.safeParse(req.body);
@@ -35,12 +59,11 @@ router.put("/sets/:id", async (req, res) => {
       return;
     }
 
-    const updates: Record<string, any> = {};
-    if (parsed.data.reps !== undefined) updates["reps"] = parsed.data.reps;
-    if (parsed.data.weightKg !== undefined)
-      updates["weightKg"] = parsed.data.weightKg?.toString() ?? null;
-    if (parsed.data.setNumber !== undefined)
-      updates["setNumber"] = parsed.data.setNumber;
+    const updates = buildSetUpdates(parsed.data);
+    if (Object.keys(updates).length === 0) {
+      res.json(serializeSet(existing));
+      return;
+    }
 
     const [updated] = await db
       .update(sets)
@@ -48,14 +71,8 @@ router.put("/sets/:id", async (req, res) => {
       .where(eq(sets.id, setId))
       .returning();
 
-    res.json({
-      id: updated.id,
-      sessionExerciseId: updated.sessionExerciseId,
-      setNumber: updated.setNumber,
-      reps: updated.reps,
-      weightKg: numOrNull(updated.weightKg),
-    });
-  } catch (err) {
+    res.json(serializeSet(updated));
+  } catch {
     res.status(500).json({ error: "Failed to update set" });
   }
 });
@@ -71,7 +88,7 @@ router.delete("/sets/:id", async (req, res) => {
     }
     await db.delete(sets).where(eq(sets.id, req.params.id!));
     res.json({ success: true });
-  } catch (err) {
+  } catch {
     res.status(500).json({ error: "Failed to delete set" });
   }
 });
