@@ -202,6 +202,48 @@ router.get("/sessions/:id", async (req, res) => {
   }
 });
 
+router.post("/sessions/:id/exercises", async (req, res) => {
+  const parsed = createSessionExerciseSchema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: parsed.error.message });
+    return;
+  }
+
+  const sessionId = req.params.id!;
+
+  try {
+    const session = await db.query.sessions.findFirst({
+      where: eq(sessions.id, sessionId),
+    });
+    if (!session) {
+      res.status(404).json({ error: "Session not found" });
+      return;
+    }
+
+    const [newExercise] = await db
+      .insert(sessionExercises)
+      .values({
+        sessionId,
+        planExerciseId: parsed.data.planExerciseId ?? null,
+        name: parsed.data.name,
+        sortOrder: parsed.data.sortOrder,
+        targetSets: parsed.data.targetSets ?? null,
+        targetReps: parsed.data.targetReps ?? null,
+        targetWeightKg: parsed.data.targetWeightKg != null ? parsed.data.targetWeightKg.toString() : null,
+      })
+      .returning();
+
+    const result = await db.query.sessionExercises.findFirst({
+      where: eq(sessionExercises.id, newExercise.id),
+      with: { sets: true },
+    });
+
+    res.status(201).json(serializeSessionExercise(result as SessionExerciseWithSets));
+  } catch {
+    res.status(500).json({ error: "Failed to add exercise to session" });
+  }
+});
+
 router.delete("/sessions/:id", async (req, res) => {
   try {
     const existing = await db.query.sessions.findFirst({

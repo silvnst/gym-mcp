@@ -243,6 +243,43 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
 
+  /sessions/{id}/exercises:
+    post:
+      operationId: addSessionExercise
+      tags: [sessions]
+      summary: Add an exercise to an existing session
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateSessionExerciseBody"
+      responses:
+        "201":
+          description: Created session exercise
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SessionExerciseWithSets"
+        "400":
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
   /sessions/{id}/sets:
     post:
       operationId: addSet
