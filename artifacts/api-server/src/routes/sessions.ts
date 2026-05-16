@@ -145,40 +145,44 @@ router.post("/sessions", async (req, res) => {
   const { planId, date, name, notes, exercises: bodyExercises } = parsed.data;
 
   try {
-    const [session] = await db
-      .insert(sessions)
-      .values({ planId: planId ?? null, date, name, notes: notes ?? null })
-      .returning();
+    const sessionId = await db.transaction(async (tx) => {
+      const [session] = await tx
+        .insert(sessions)
+        .values({ planId: planId ?? null, date, name, notes: notes ?? null })
+        .returning();
 
-    let exercisesToInsert: ReturnType<typeof buildSessionExerciseValues> = [];
+      let exercisesToInsert: ReturnType<typeof buildSessionExerciseValues> = [];
 
-    if (bodyExercises && bodyExercises.length > 0) {
-      exercisesToInsert = buildSessionExerciseValues(bodyExercises, session.id);
-    } else if (planId) {
-      const plan = await db.query.plans.findFirst({
-        where: eq(plans.id, planId),
-        with: {
-          planExercises: { orderBy: (pe, { asc }) => [asc(pe.sortOrder)] },
-        },
-      });
-      if (plan) {
-        exercisesToInsert = plan.planExercises.map((pe) => ({
-          sessionId: session.id,
-          planExerciseId: pe.id,
-          name: pe.name,
-          sortOrder: pe.sortOrder,
-          targetSets: pe.targetSets,
-          targetReps: pe.targetReps,
-          targetWeightKg: pe.targetWeightKg,
-        }));
+      if (bodyExercises && bodyExercises.length > 0) {
+        exercisesToInsert = buildSessionExerciseValues(bodyExercises, session.id);
+      } else if (planId) {
+        const plan = await tx.query.plans.findFirst({
+          where: eq(plans.id, planId),
+          with: {
+            planExercises: { orderBy: (pe, { asc }) => [asc(pe.sortOrder)] },
+          },
+        });
+        if (plan) {
+          exercisesToInsert = plan.planExercises.map((pe) => ({
+            sessionId: session.id,
+            planExerciseId: pe.id,
+            name: pe.name,
+            sortOrder: pe.sortOrder,
+            targetSets: pe.targetSets,
+            targetReps: pe.targetReps,
+            targetWeightKg: pe.targetWeightKg,
+          }));
+        }
       }
-    }
 
-    if (exercisesToInsert.length > 0) {
-      await db.insert(sessionExercises).values(exercisesToInsert);
-    }
+      if (exercisesToInsert.length > 0) {
+        await tx.insert(sessionExercises).values(exercisesToInsert);
+      }
 
-    const result = await getSessionWithDetail(session.id);
+      return session.id;
+    });
+
+    const result = await getSessionWithDetail(sessionId);
     res.status(201).json(result);
   } catch {
     res.status(500).json({ error: "Failed to create session" });
