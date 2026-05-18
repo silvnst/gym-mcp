@@ -9,6 +9,10 @@ if (!rawPort) {
   );
 }
 
+if (!process.env["MCP_API_KEY"]) {
+  throw new Error("MCP_API_KEY secret is required but was not set.");
+}
+
 const port = Number(rawPort);
 
 if (Number.isNaN(port) || port <= 0) {
