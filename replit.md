@@ -1,67 +1,96 @@
 # Gym Tracker
 
-A personal gym tracking app with workout plan management, session execution, history, and an MCP server for Claude.ai analysis.
+A personal gym tracking app with workout plan management, session execution, history, and a Claude.ai-connected MCP server for analysis and voice-logging workouts.
 
 ## Run & Operate
 
 - `pnpm --filter @workspace/api-server run dev` — run the API server (port 8080)
+- `pnpm --filter @workspace/gym-tracker run dev` — run the frontend (port from `$PORT`)
 - `pnpm run typecheck` — full typecheck across all packages
 - `pnpm run build` — typecheck + build all packages
 - `pnpm --filter @workspace/api-spec run codegen` — regenerate API hooks and Zod schemas from the OpenAPI spec
 - `pnpm --filter @workspace/db run push` — push DB schema changes (dev only)
-- Required env: `DATABASE_URL` — Postgres connection string
-- Required secret: `MCP_CLIENT_ID` — OAuth Client ID entered in the Claude.ai connector dialog
-- Required secret: `MCP_CLIENT_SECRET` — OAuth Client Secret entered in the Claude.ai connector dialog
+
+### Required secrets
+
+| Secret | Purpose |
+|---|---|
+| `DATABASE_URL` | Postgres connection string |
+
+No other secrets required — MCP auth uses OAuth 2.0 Authorization Code + PKCE (no pre-shared keys needed).
 
 ## Stack
 
 - pnpm workspaces, Node.js 24, TypeScript 5.9
-- API: Express 5
-- DB: PostgreSQL + Drizzle ORM (5 tables: plans, plan_exercises, sessions, session_exercises, sets)
-- Validation: Zod
-- MCP: @modelcontextprotocol/sdk (Streamable HTTP transport, spec 2025-03-26)
-- API codegen: Orval (from OpenAPI spec)
-- Build: esbuild (ESM bundle)
+- **Frontend**: React 18, Vite, Wouter (routing), TanStack Query, shadcn/ui, Tailwind CSS
+- **API**: Express 5
+- **DB**: PostgreSQL + Drizzle ORM (5 tables: plans, plan_exercises, sessions, session_exercises, sets)
+- **Validation**: Zod
+- **MCP**: @modelcontextprotocol/sdk — Streamable HTTP transport (spec 2025-03-26)
+- **API codegen**: Orval (from OpenAPI spec → React Query hooks + Zod schemas)
+- **Build**: esbuild (ESM bundle for API server)
 
 ## Where things live
 
+### Backend
 - `lib/api-spec/openapi.yaml` — source of truth for all REST API contracts
 - `lib/db/src/schema/index.ts` — Drizzle ORM schema (all 5 tables + relations)
 - `artifacts/api-server/src/routes/` — REST route handlers (plans, sessions, sets, health)
-- `artifacts/api-server/src/mcp/server.ts` — MCP server with all 5 tools
-- `artifacts/api-server/src/middlewares/mcpAuth.ts` — Bearer token auth for MCP
-- `lib/api-client-react/src/generated/` — generated React Query hooks (do not edit)
-- `lib/api-zod/src/generated/` — generated Zod schemas (do not edit)
+- `artifacts/api-server/src/routes/oauth.ts` — OAuth 2.0 discovery, `/authorize`, and `/token` endpoints
+- `artifacts/api-server/src/mcp/server.ts` — MCP server with all 7 tools
+- `artifacts/api-server/src/middlewares/mcpAuth.ts` — Bearer token validation (token store)
+- `artifacts/api-server/src/lib/tokenStore.ts` — in-memory access token store (1-hour TTL)
+- `artifacts/api-server/src/lib/authCodeStore.ts` — in-memory auth code store (10-min TTL, used during OAuth flow)
+
+### Frontend
+- `artifacts/gym-tracker/src/App.tsx` — router setup (Wouter)
+- `artifacts/gym-tracker/src/pages/home.tsx` — Plans list (create, edit, delete)
+- `artifacts/gym-tracker/src/pages/start.tsx` — Start workout (from plan or empty)
+- `artifacts/gym-tracker/src/pages/session.tsx` — Active session recording
+- `artifacts/gym-tracker/src/pages/session-detail.tsx` — Post-session summary (target vs actual)
+- `artifacts/gym-tracker/src/pages/history.tsx` — Paginated session history
+- `artifacts/gym-tracker/src/pages/plan-form.tsx` — Plan create/edit form
+
+### Generated (do not edit manually)
+- `lib/api-client-react/src/generated/` — React Query hooks
+- `lib/api-zod/src/generated/` — Zod schemas
 
 ## Architecture decisions
 
-- MCP server uses Streamable HTTP transport (MCP spec 2025-03-26) at `POST /mcp` — compatible with Claude.ai remote custom connectors
-- MCP endpoints are separate from `/api/*` REST routes — no base path prefix, auth via Bearer token only
-- Sessions can be created from a plan (exercises pre-populated) or ad-hoc
+- MCP uses Streamable HTTP transport (MCP spec 2025-03-26) at `POST /mcp` — required by Claude.ai remote connectors
+- MCP auth uses OAuth 2.0 Authorization Code + PKCE — Claude.ai initiates the flow, user clicks "Authorize" once, tokens expire after 1 hour and are auto-renewed
+- No pre-shared secrets needed for MCP; security comes from PKCE and the fact that the auth code can only be exchanged by the party that initiated the flow
+- OAuth auth codes are stored in-memory (5 min TTL); access tokens are stored in-memory (1 hr TTL) — reconnect after server restart
 - Cascade deletes: plan → plan_exercises; session → session_exercises → sets
-- `lib/api-zod/src/index.ts` only re-exports `./generated/api` (not `./generated/types`) to avoid name collisions with orval-generated Zod schemas
+- Finish button in active session is blocked via `useIsMutating()` to prevent navigating away before pending set saves flush
+- `lib/api-zod/src/index.ts` only re-exports `./generated/api` (not `./generated/types`) to avoid name collisions with Orval-generated Zod schemas
 
 ## Product
 
-- **Plans**: Create reusable workout templates with exercises and target sets/reps/weight
-- **Sessions**: Execute a session from a plan or ad-hoc; log actual reps/weight per set
-- **History**: Browse past sessions with full exercise/set detail
-- **MCP for Claude.ai**: Connect at `https://<host>/mcp` — 8 tools (6 read, 2 write)
+### Web App
 
-## MCP Tools
+| Page | Path | What it does |
+|---|---|---|
+| Plans | `/` | List all plans; create, edit, or delete |
+| Start Workout | `/start` | Pick a plan (exercises pre-populated) or start an empty session |
+| Active Session | `/session/:id` | Log sets (weight + reps); add exercises mid-session; delete sets; Finish saves and redirects |
+| Session Detail | `/history/:id` | Target vs actual table (Target kg / Actual kg / Target Reps / Actual Reps / Vol) per set |
+| History | `/history` | Paginated session list (10/page, prev/next) |
+| Plan Form | `/plans/new`, `/plans/:id/edit` | Create or edit a plan; up/down arrows to reorder exercises |
 
-### Read tools
+### MCP Tools for Claude.ai
+
+#### Read tools
 
 | Tool | Input | Description |
 |---|---|---|
-| `get_history` | `limit` (default 10, max 50), `after`/`before` (YYYY-MM-DD, optional) | Recent sessions with full exercises + sets, newest first |
+| `get_history` | `limit` (default 10, max 50) | Recent sessions with full exercises + sets, newest first |
 | `get_session_detail` | `session_id` | Full detail of one session |
 | `get_plans` | — | All workout plans with exercises and targets |
 | `get_prs` | — | Personal record (heaviest set) per exercise, alphabetically |
 | `get_volume_by_week` | `weeks` (default 8, max 52) | Total volume (reps × kg) per exercise per ISO week |
-| `get_exercise_history` | `exercise_name`, `limit` (default 30, max 100) | Every logged set for one exercise in chronological order |
 
-### Write tools
+#### Write tools
 
 | Tool | Input | Description |
 |---|---|---|
@@ -72,7 +101,7 @@ A personal gym tracking app with workout plan management, session execution, his
 ```json
 {
   "date": "2026-05-18",
-  "name": "Gemini A",
+  "name": "Push A",
   "notes": "Felt strong",
   "exercises": [
     {
@@ -90,26 +119,23 @@ A personal gym tracking app with workout plan management, session execution, his
 
 1. Go to **Claude.ai → Settings → Connectors → Add custom connector**
 2. Set the **Remote MCP server URL** to: `https://<deployed-host>/mcp`
-3. Under **Advanced settings**, enter:
-   - **OAuth Client ID**: the value of your `MCP_CLIENT_ID` secret
-   - **OAuth Client Secret**: the value of your `MCP_CLIENT_SECRET` secret
-4. Save — Claude discovers all 7 tools automatically
+3. Save — Claude.ai will redirect you to your server's `/authorize` page
+4. Click **Authorize** — you'll be redirected back to Claude.ai automatically
+5. Claude discovers all 7 tools
 
-Claude.ai will call `GET /.well-known/oauth-authorization-server` to find the token endpoint,
-then `POST /token` with your credentials to get a short-lived Bearer token (valid 1 hour, auto-renewed).
+No Client ID or Client Secret is required. The OAuth flow uses PKCE for security.
 
-After connecting you can talk to Claude naturally:
-
-- _"Log today's session: Gemini A — back squat 3×5 at 102.5kg, RDL 3×8 at 80kg"_
+**Example things to say to Claude:**
+- _"Log today's session: Push A — bench press 4×8 at 80kg, OHP 3×10 at 50kg"_
 - _"What are my current PRs?"_
 - _"How has my squat volume changed over the last 6 weeks?"_
+- _"Show me last Tuesday's session in detail"_
 - _"Delete yesterday's session"_
-- _"Compare my planned vs actual performance in the last 3 sessions"_
 
 ## Gotchas
 
 - After changing `lib/api-spec/openapi.yaml`, always run codegen before using hooks
-- `lib/api-zod/src/index.ts` should only export from `./generated/api` — orval sometimes regenerates it with an extra `./generated/types` line that causes type conflicts; remove it if it reappears
+- `lib/api-zod/src/index.ts` should only export from `./generated/api` — Orval sometimes regenerates it with an extra `./generated/types` line; remove it if it reappears
 - The `zod/v4` subpath import doesn't bundle with esbuild — use `zod` directly in api-server routes
-- `MCP_CLIENT_ID` and `MCP_CLIENT_SECRET` are secrets — set in Replit Secrets, not env vars
-- Tokens expire after 1 hour; Claude.ai automatically re-authenticates via `POST /token`
+- Auth codes and access tokens are in-memory — if the API server restarts, active MCP sessions will need to re-authorize (Claude.ai does this automatically on next use)
+- The API server must be running for the frontend to work — both are registered as separate workflows
