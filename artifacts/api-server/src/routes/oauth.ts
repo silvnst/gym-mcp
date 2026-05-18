@@ -1,9 +1,20 @@
 import { createHash, randomUUID } from "node:crypto";
 import { Router } from "express";
 import { tokenStore } from "../lib/tokenStore.js";
+import { refreshStore } from "../lib/refreshStore.js";
 import { authCodeStore } from "../lib/authCodeStore.js";
 
 const router = Router();
+
+// ── Protected Resource Metadata (RFC 9728) ────────────────────────────────────
+
+router.get("/.well-known/oauth-protected-resource", (req, res) => {
+  const base = `${req.protocol}://${req.get("host")}`;
+  res.json({
+    resource: `${base}/mcp`,
+    authorization_servers: [base],
+  });
+});
 
 // ── OAuth 2.0 discovery ────────────────────────────────────────────────────────
 
@@ -13,10 +24,29 @@ router.get("/.well-known/oauth-authorization-server", (req, res) => {
     issuer: base,
     authorization_endpoint: `${base}/authorize`,
     token_endpoint: `${base}/token`,
-    grant_types_supported: ["authorization_code"],
+    registration_endpoint: `${base}/register`,
+    grant_types_supported: ["authorization_code", "refresh_token"],
     response_types_supported: ["code"],
     code_challenge_methods_supported: ["S256"],
     token_endpoint_auth_methods_supported: ["none"],
+  });
+});
+
+// ── Dynamic Client Registration (RFC 7591) ────────────────────────────────────
+
+router.post("/register", (req, res) => {
+  const body: Record<string, unknown> = req.body ?? {};
+  const redirectUris = Array.isArray(body["redirect_uris"])
+    ? (body["redirect_uris"] as string[])
+    : [];
+
+  res.status(201).json({
+    client_id: randomUUID(),
+    client_id_issued_at: Math.floor(Date.now() / 1000),
+    redirect_uris: redirectUris,
+    token_endpoint_auth_method: "none",
+    grant_types: ["authorization_code", "refresh_token"],
+    response_types: ["code"],
   });
 });
 
@@ -204,8 +234,33 @@ router.post("/authorize", (req, res) => {
 
 router.post("/token", (req, res) => {
   const body: Record<string, string> = req.body ?? {};
-  const { grant_type, code, code_verifier, redirect_uri } = body;
+  const { grant_type, code, code_verifier, redirect_uri, refresh_token } = body;
 
+  // ── Refresh token grant ────────────────────────────────────────────────────
+  if (grant_type === "refresh_token") {
+    if (!refresh_token || !refreshStore.valid(refresh_token)) {
+      res.status(400).json({ error: "invalid_grant" });
+      return;
+    }
+
+    // Rotate: delete old refresh token and mint new pair
+    refreshStore.delete(refresh_token);
+
+    const newAccessToken = randomUUID();
+    const newRefreshToken = randomUUID();
+    tokenStore.add(newAccessToken);
+    refreshStore.add(newRefreshToken);
+
+    res.json({
+      access_token: newAccessToken,
+      token_type: "Bearer",
+      expires_in: 3600,
+      refresh_token: newRefreshToken,
+    });
+    return;
+  }
+
+  // ── Authorization code grant ───────────────────────────────────────────────
   if (grant_type !== "authorization_code") {
     res.status(400).json({ error: "unsupported_grant_type" });
     return;
@@ -237,13 +292,16 @@ router.post("/token", (req, res) => {
 
   authCodeStore.delete(code);
 
-  const token = randomUUID();
-  tokenStore.add(token);
+  const accessToken = randomUUID();
+  const refreshToken = randomUUID();
+  tokenStore.add(accessToken);
+  refreshStore.add(refreshToken);
 
   res.json({
-    access_token: token,
+    access_token: accessToken,
     token_type: "Bearer",
     expires_in: 3600,
+    refresh_token: refreshToken,
   });
 });
 
