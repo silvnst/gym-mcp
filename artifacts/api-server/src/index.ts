@@ -9,6 +9,14 @@ if (!rawPort) {
   );
 }
 
+if (!process.env["MCP_CLIENT_ID"]) {
+  throw new Error("MCP_CLIENT_ID is required but was not set.");
+}
+
+if (!process.env["MCP_CLIENT_SECRET"]) {
+  throw new Error("MCP_CLIENT_SECRET secret is required but was not set.");
+}
+
 const port = Number(rawPort);
 
 if (Number.isNaN(port) || port <= 0) {

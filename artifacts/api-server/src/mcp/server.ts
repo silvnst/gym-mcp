@@ -1,6 +1,7 @@
+import { randomUUID } from "node:crypto";
 import type { Express } from "express";
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
-import { SSEServerTransport } from "@modelcontextprotocol/sdk/server/sse.js";
+import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import {
   ListToolsRequestSchema,
   CallToolRequestSchema,
@@ -17,13 +18,15 @@ import {
 import { mcpAuth } from "../middlewares/mcpAuth.js";
 import { logger } from "../lib/logger.js";
 
-const transports = new Map<string, SSEServerTransport>();
+const transports = new Map<string, StreamableHTTPServerTransport>();
 
 function numOrNull(v: string | null | undefined): number | null {
   if (v == null) return null;
   const n = parseFloat(v);
   return isNaN(n) ? null : n;
 }
+
+// ── Zod schemas for tool arguments ────────────────────────────────────────────
 
 const getHistoryArgsSchema = z.object({
   limit: z.number().int().min(1).max(50).default(10),
@@ -37,8 +40,33 @@ const getVolumeByWeekArgsSchema = z.object({
   weeks: z.number().int().min(1).max(52).default(8),
 });
 
+const logSessionSetSchema = z.object({
+  reps: z.number().int().min(0).nullable().optional(),
+  weight_kg: z.number().min(0).nullable().optional(),
+});
+
+const logSessionExerciseSchema = z.object({
+  name: z.string().min(1),
+  sets: z.array(logSessionSetSchema).min(1),
+});
+
+const logSessionArgsSchema = z.object({
+  date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "date must be YYYY-MM-DD"),
+  name: z.string().min(1),
+  notes: z.string().nullable().optional(),
+  exercises: z.array(logSessionExerciseSchema).min(1),
+});
+
+const deleteSessionArgsSchema = z.object({
+  session_id: z.string().min(1),
+});
+
+// ── Raw SQL row types ──────────────────────────────────────────────────────────
+
 type PrRow = { exercise: string; weight_kg: string; reps: number | null; date: string };
 type VolumeRow = { week: Date | string; exercise: string; total_volume_kg: string };
+
+// ── MCP server factory ─────────────────────────────────────────────────────────
 
 function createMcpServer(): Server {
   const server = new Server(
@@ -48,6 +76,7 @@ function createMcpServer(): Server {
 
   server.setRequestHandler(ListToolsRequestSchema, async () => ({
     tools: [
+      // ── Read tools ────────────────────────────────────────────────────────
       {
         name: "get_history",
         description:
@@ -68,31 +97,21 @@ function createMcpServer(): Server {
         inputSchema: {
           type: "object",
           properties: {
-            session_id: {
-              type: "string",
-              description: "The session ID",
-            },
+            session_id: { type: "string", description: "The session ID" },
           },
           required: ["session_id"],
         },
       },
       {
         name: "get_plans",
-        description:
-          "Returns all workout plans with their exercises and targets.",
-        inputSchema: {
-          type: "object",
-          properties: {},
-        },
+        description: "Returns all workout plans with their exercises and targets.",
+        inputSchema: { type: "object", properties: {} },
       },
       {
         name: "get_prs",
         description:
           "Returns the personal record (heaviest weight) for every exercise ever logged, with reps and date. Ordered alphabetically.",
-        inputSchema: {
-          type: "object",
-          properties: {},
-        },
+        inputSchema: { type: "object", properties: {} },
       },
       {
         name: "get_volume_by_week",
@@ -103,9 +122,67 @@ function createMcpServer(): Server {
           properties: {
             weeks: {
               type: "number",
-              description: "Number of recent weeks to include. Default 8.",
+              description: "Number of recent weeks to include. Default 8, max 52.",
             },
           },
+        },
+      },
+      // ── Write tools ───────────────────────────────────────────────────────
+      {
+        name: "log_session",
+        description:
+          "Logs a complete workout session atomically (session + exercises + sets in one call).",
+        inputSchema: {
+          type: "object",
+          properties: {
+            date: {
+              type: "string",
+              description: "Session date in YYYY-MM-DD format.",
+            },
+            name: {
+              type: "string",
+              description: "Session name, e.g. 'Gemini A'.",
+            },
+            notes: {
+              type: "string",
+              description: "Optional free-text notes for the session.",
+            },
+            exercises: {
+              type: "array",
+              description: "Ordered list of exercises performed.",
+              items: {
+                type: "object",
+                properties: {
+                  name: { type: "string", description: "Exercise name, e.g. 'Back Squat'." },
+                  sets: {
+                    type: "array",
+                    description: "Sets performed for this exercise.",
+                    items: {
+                      type: "object",
+                      properties: {
+                        reps: { type: "number", description: "Reps performed (integer)." },
+                        weight_kg: { type: "number", description: "Weight in kg." },
+                      },
+                    },
+                  },
+                },
+                required: ["name", "sets"],
+              },
+            },
+          },
+          required: ["date", "name", "exercises"],
+        },
+      },
+      {
+        name: "delete_session",
+        description:
+          "Permanently deletes a session and all its exercises and sets. This cannot be undone.",
+        inputSchema: {
+          type: "object",
+          properties: {
+            session_id: { type: "string", description: "The session ID to delete." },
+          },
+          required: ["session_id"],
         },
       },
     ],
@@ -116,6 +193,8 @@ function createMcpServer(): Server {
 
     try {
       switch (name) {
+        // ── Read handlers ────────────────────────────────────────────────────
+
         case "get_history": {
           const parsed = getHistoryArgsSchema.safeParse(args ?? {});
           if (!parsed.success) {
@@ -124,17 +203,14 @@ function createMcpServer(): Server {
               isError: true,
             };
           }
-          const limit = parsed.data.limit;
 
           const recentSessions = await db.query.sessions.findMany({
             orderBy: [desc(sessions.date)],
-            limit,
+            limit: parsed.data.limit,
             with: {
               sessionExercises: {
                 orderBy: (se, { asc }) => [asc(se.sortOrder)],
-                with: {
-                  sets: { orderBy: (s, { asc }) => [asc(s.setNumber)] },
-                },
+                with: { sets: { orderBy: (s, { asc }) => [asc(s.setNumber)] } },
               },
             },
           });
@@ -157,9 +233,7 @@ function createMcpServer(): Server {
             })),
           }));
 
-          return {
-            content: [{ type: "text", text: JSON.stringify(result, null, 2) }],
-          };
+          return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
         }
 
         case "get_session_detail": {
@@ -171,28 +245,19 @@ function createMcpServer(): Server {
             };
           }
 
-          const { session_id: sessionId } = parsed.data;
-
           const session = await db.query.sessions.findFirst({
-            where: eq(sessions.id, sessionId),
+            where: eq(sessions.id, parsed.data.session_id),
             with: {
               sessionExercises: {
                 orderBy: (se, { asc }) => [asc(se.sortOrder)],
-                with: {
-                  sets: { orderBy: (s, { asc }) => [asc(s.setNumber)] },
-                },
+                with: { sets: { orderBy: (s, { asc }) => [asc(s.setNumber)] } },
               },
             },
           });
 
           if (!session) {
             return {
-              content: [
-                {
-                  type: "text",
-                  text: `Error: Session with ID "${sessionId}" not found`,
-                },
-              ],
+              content: [{ type: "text", text: `Error: Session "${parsed.data.session_id}" not found` }],
               isError: true,
             };
           }
@@ -215,9 +280,7 @@ function createMcpServer(): Server {
             })),
           };
 
-          return {
-            content: [{ type: "text", text: JSON.stringify(result, null, 2) }],
-          };
+          return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
         }
 
         case "get_plans": {
@@ -242,9 +305,7 @@ function createMcpServer(): Server {
             })),
           }));
 
-          return {
-            content: [{ type: "text", text: JSON.stringify(result, null, 2) }],
-          };
+          return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
         }
 
         case "get_prs": {
@@ -268,9 +329,7 @@ function createMcpServer(): Server {
             date: r.date,
           }));
 
-          return {
-            content: [{ type: "text", text: JSON.stringify(result, null, 2) }],
-          };
+          return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
         }
 
         case "get_volume_by_week": {
@@ -281,7 +340,6 @@ function createMcpServer(): Server {
               isError: true,
             };
           }
-          const weeks = parsed.data.weeks;
 
           const rows = await db.execute<VolumeRow>(sql`
             SELECT
@@ -294,7 +352,7 @@ function createMcpServer(): Server {
             WHERE
               s.reps IS NOT NULL
               AND s.weight_kg IS NOT NULL
-              AND sess.date >= (CURRENT_DATE - (${weeks} * INTERVAL '1 week'))
+              AND sess.date >= (CURRENT_DATE - (${parsed.data.weeks} * INTERVAL '1 week'))
             GROUP BY 1, 2
             ORDER BY 1 ASC, 2 ASC
           `);
@@ -305,8 +363,85 @@ function createMcpServer(): Server {
             total_volume_kg: parseFloat(r.total_volume_kg),
           }));
 
+          return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
+        }
+
+        // ── Write handlers ───────────────────────────────────────────────────
+
+        case "log_session": {
+          const parsed = logSessionArgsSchema.safeParse(args ?? {});
+          if (!parsed.success) {
+            return {
+              content: [{ type: "text", text: `Error: invalid arguments — ${parsed.error.message}` }],
+              isError: true,
+            };
+          }
+
+          const { date, name, notes, exercises } = parsed.data;
+
+          const sessionId = await db.transaction(async (tx) => {
+            const [session] = await tx
+              .insert(sessions)
+              .values({ date, name, notes: notes ?? null })
+              .returning({ id: sessions.id });
+
+            for (let i = 0; i < exercises.length; i++) {
+              const ex = exercises[i]!;
+              const [se] = await tx
+                .insert(sessionExercises)
+                .values({
+                  sessionId: session.id,
+                  name: ex.name,
+                  sortOrder: i,
+                })
+                .returning({ id: sessionExercises.id });
+
+              if (ex.sets.length > 0) {
+                await tx.insert(sets).values(
+                  ex.sets.map((s, si) => ({
+                    sessionExerciseId: se.id,
+                    setNumber: si + 1,
+                    reps: s.reps ?? null,
+                    weightKg: s.weight_kg != null ? s.weight_kg.toString() : null,
+                  })),
+                );
+              }
+            }
+
+            return session.id;
+          });
+
           return {
-            content: [{ type: "text", text: JSON.stringify(result, null, 2) }],
+            content: [
+              { type: "text", text: JSON.stringify({ success: true, session_id: sessionId }) },
+            ],
+          };
+        }
+
+        case "delete_session": {
+          const parsed = deleteSessionArgsSchema.safeParse(args ?? {});
+          if (!parsed.success) {
+            return {
+              content: [{ type: "text", text: "Error: session_id is required" }],
+              isError: true,
+            };
+          }
+
+          const existing = await db.query.sessions.findFirst({
+            where: eq(sessions.id, parsed.data.session_id),
+          });
+
+          if (!existing) {
+            return {
+              content: [{ type: "text", text: `Error: Session "${parsed.data.session_id}" not found` }],
+              isError: true,
+            };
+          }
+
+          await db.delete(sessions).where(eq(sessions.id, parsed.data.session_id));
+
+          return {
+            content: [{ type: "text", text: JSON.stringify({ success: true }) }],
           };
         }
 
@@ -333,44 +468,50 @@ function createMcpServer(): Server {
   return server;
 }
 
-export function setupMcpRoutes(app: Express): void {
-  app.get("/sse", mcpAuth, async (req, res) => {
-    try {
-      const transport = new SSEServerTransport("/messages", res);
-      transports.set(transport.sessionId, transport);
+// ── Route setup ────────────────────────────────────────────────────────────────
 
-      res.on("close", () => {
-        transports.delete(transport.sessionId);
-        logger.info({ sessionId: transport.sessionId }, "MCP SSE connection closed");
+export function setupMcpRoutes(app: Express): void {
+  // Single endpoint handles POST (new session or message), GET (SSE stream), DELETE (close session)
+  app.all("/mcp", mcpAuth, async (req, res) => {
+    try {
+      const sessionId = req.headers["mcp-session-id"] as string | undefined;
+
+      if (sessionId) {
+        const transport = transports.get(sessionId);
+        if (!transport) {
+          res.status(404).json({ error: "MCP session not found or expired" });
+          return;
+        }
+        await transport.handleRequest(req, res, req.body);
+        return;
+      }
+
+      // No session ID → new session, only POST is valid for initialization
+      if (req.method !== "POST") {
+        res.status(400).json({ error: "Send POST to /mcp to start a new session" });
+        return;
+      }
+
+      const newSessionId = randomUUID();
+      const transport = new StreamableHTTPServerTransport({
+        sessionIdGenerator: () => newSessionId,
       });
 
-      logger.info({ sessionId: transport.sessionId }, "MCP SSE connection opened");
+      transport.onclose = () => {
+        transports.delete(newSessionId);
+        logger.info({ sessionId: newSessionId }, "MCP session closed");
+      };
+
+      transports.set(newSessionId, transport);
+      logger.info({ sessionId: newSessionId }, "MCP session opened");
 
       const server = createMcpServer();
       await server.connect(transport);
+      await transport.handleRequest(req, res, req.body);
     } catch (err) {
-      logger.error({ err }, "MCP SSE connection error");
+      logger.error({ err }, "MCP request error");
       if (!res.headersSent) {
-        res.status(500).json({ error: "Failed to establish MCP connection" });
-      }
-    }
-  });
-
-  app.post("/messages", mcpAuth, async (req, res) => {
-    const sessionId = req.query["sessionId"] as string;
-    const transport = transports.get(sessionId);
-
-    if (!transport) {
-      res.status(404).json({ error: "No active MCP session with that ID" });
-      return;
-    }
-
-    try {
-      await transport.handlePostMessage(req, res, req.body);
-    } catch (err) {
-      logger.error({ err, sessionId }, "MCP message handling error");
-      if (!res.headersSent) {
-        res.status(500).json({ error: "Failed to handle MCP message" });
+        res.status(500).json({ error: "MCP error" });
       }
     }
   });
