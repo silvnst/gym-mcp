@@ -16,8 +16,11 @@ A personal gym tracking app with workout plan management, session execution, his
 | Secret | Purpose |
 |---|---|
 | `DATABASE_URL` | Postgres connection string |
+| `MCP_API_KEY` | *(Optional)* Static Bearer token for MCP. If set, Claude.ai can connect with `Authorization: Bearer <value>` instead of going through the OAuth flow. |
 
-No other secrets required — MCP auth uses OAuth 2.0 Authorization Code + PKCE (no pre-shared keys needed).
+MCP auth supports two modes — whichever matches is accepted:
+1. **Static key** — set `MCP_API_KEY` and paste that value into Claude.ai's connector header field
+2. **OAuth 2.0 PKCE** — no secret needed; Claude.ai initiates the flow and you click Authorize once
 
 ## Stack
 
@@ -117,13 +120,19 @@ No other secrets required — MCP auth uses OAuth 2.0 Authorization Code + PKCE 
 
 ## Connecting Claude.ai
 
+### Option A — Static API key (simpler)
+1. Set `MCP_API_KEY` to any secret string in Replit Secrets
+2. Go to **Claude.ai → Settings → Connectors → Add custom connector**
+3. Set the **Remote MCP server URL** to: `https://<deployed-host>/mcp`
+4. Add header `Authorization: Bearer <your-MCP_API_KEY-value>`
+5. Claude discovers all 7 tools
+
+### Option B — OAuth (no secret to manage)
 1. Go to **Claude.ai → Settings → Connectors → Add custom connector**
 2. Set the **Remote MCP server URL** to: `https://<deployed-host>/mcp`
 3. Save — Claude.ai will redirect you to your server's `/authorize` page
 4. Click **Authorize** — you'll be redirected back to Claude.ai automatically
 5. Claude discovers all 7 tools
-
-No Client ID or Client Secret is required. The OAuth flow uses PKCE for security.
 
 **Example things to say to Claude:**
 - _"Log today's session: Push A — bench press 4×8 at 80kg, OHP 3×10 at 50kg"_

@@ -13,7 +13,9 @@ export function mcpAuth(req: Request, res: Response, next: NextFunction): void {
   }
 
   const token = authHeader.slice("Bearer ".length);
-  if (!tokenStore.valid(token)) {
+  const staticKey = process.env["MCP_API_KEY"];
+  const isValid = (staticKey && token === staticKey) || tokenStore.valid(token);
+  if (!isValid) {
     res.setHeader("WWW-Authenticate", wwwAuth);
     res.status(401).json({ error: "Invalid or expired token" });
     return;
