@@ -10,7 +10,8 @@ A personal gym tracking app with workout plan management, session execution, his
 - `pnpm --filter @workspace/api-spec run codegen` — regenerate API hooks and Zod schemas from the OpenAPI spec
 - `pnpm --filter @workspace/db run push` — push DB schema changes (dev only)
 - Required env: `DATABASE_URL` — Postgres connection string
-- Required secret: `MCP_API_KEY` — Bearer token for Claude.ai MCP authentication
+- Required secret: `MCP_CLIENT_ID` — OAuth Client ID entered in the Claude.ai connector dialog
+- Required secret: `MCP_CLIENT_SECRET` — OAuth Client Secret entered in the Claude.ai connector dialog
 
 ## Stack
 
@@ -87,9 +88,14 @@ A personal gym tracking app with workout plan management, session execution, his
 ## Connecting Claude.ai
 
 1. Go to **Claude.ai → Settings → Connectors → Add custom connector**
-2. Set the **URL** to: `https://<deployed-host>/mcp`
-3. Add a custom **header**: `Authorization: Bearer <MCP_API_KEY>`
+2. Set the **Remote MCP server URL** to: `https://<deployed-host>/mcp`
+3. Under **Advanced settings**, enter:
+   - **OAuth Client ID**: the value of your `MCP_CLIENT_ID` secret
+   - **OAuth Client Secret**: the value of your `MCP_CLIENT_SECRET` secret
 4. Save — Claude discovers all 7 tools automatically
+
+Claude.ai will call `GET /.well-known/oauth-authorization-server` to find the token endpoint,
+then `POST /token` with your credentials to get a short-lived Bearer token (valid 1 hour, auto-renewed).
 
 After connecting you can talk to Claude naturally:
 
@@ -104,4 +110,5 @@ After connecting you can talk to Claude naturally:
 - After changing `lib/api-spec/openapi.yaml`, always run codegen before using hooks
 - `lib/api-zod/src/index.ts` should only export from `./generated/api` — orval sometimes regenerates it with an extra `./generated/types` line that causes type conflicts; remove it if it reappears
 - The `zod/v4` subpath import doesn't bundle with esbuild — use `zod` directly in api-server routes
-- MCP_API_KEY is a secret (not an env var) — set in Replit Secrets
+- `MCP_CLIENT_ID` and `MCP_CLIENT_SECRET` are secrets — set in Replit Secrets, not env vars
+- Tokens expire after 1 hour; Claude.ai automatically re-authenticates via `POST /token`
