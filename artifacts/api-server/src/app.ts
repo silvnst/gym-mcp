@@ -27,7 +27,7 @@ app.use(
     },
   }),
 );
-app.use(cors());
+app.use(cors({ origin: process.env["FRONTEND_ORIGIN"] ?? "*" }));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 

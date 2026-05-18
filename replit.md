@@ -1,6 +1,6 @@
 # Gym Tracker
 
-A personal gym tracking app with workout plan management, session execution, history, and a read-only MCP server for Claude.ai analysis.
+A personal gym tracking app with workout plan management, session execution, history, and an MCP server for Claude.ai analysis.
 
 ## Run & Operate
 
@@ -46,7 +46,7 @@ A personal gym tracking app with workout plan management, session execution, his
 - **Plans**: Create reusable workout templates with exercises and target sets/reps/weight
 - **Sessions**: Execute a session from a plan or ad-hoc; log actual reps/weight per set
 - **History**: Browse past sessions with full exercise/set detail
-- **MCP for Claude.ai**: Connect at `https://<host>/mcp` with `Authorization: Bearer <MCP_API_KEY>` header — 7 tools (5 read, 2 write)
+- **MCP for Claude.ai**: Connect at `https://<host>/mcp` — 8 tools (6 read, 2 write)
 
 ## MCP Tools
 
@@ -54,11 +54,12 @@ A personal gym tracking app with workout plan management, session execution, his
 
 | Tool | Input | Description |
 |---|---|---|
-| `get_history` | `limit` (default 10, max 50) | Recent sessions with full exercises + sets, newest first |
+| `get_history` | `limit` (default 10, max 50), `after`/`before` (YYYY-MM-DD, optional) | Recent sessions with full exercises + sets, newest first |
 | `get_session_detail` | `session_id` | Full detail of one session |
 | `get_plans` | — | All workout plans with exercises and targets |
 | `get_prs` | — | Personal record (heaviest set) per exercise, alphabetically |
 | `get_volume_by_week` | `weeks` (default 8, max 52) | Total volume (reps × kg) per exercise per ISO week |
+| `get_exercise_history` | `exercise_name`, `limit` (default 30, max 100) | Every logged set for one exercise in chronological order |
 
 ### Write tools
 

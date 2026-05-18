@@ -6,7 +6,7 @@ import {
   ListToolsRequestSchema,
   CallToolRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
-import { desc, eq, sql } from "drizzle-orm";
+import { and, desc, eq, gte, lte, sql } from "drizzle-orm";
 import { z } from "zod";
 import {
   db,
@@ -18,7 +18,24 @@ import {
 import { mcpAuth } from "../middlewares/mcpAuth.js";
 import { logger } from "../lib/logger.js";
 
+// ── Transport session state ────────────────────────────────────────────────────
+
 const transports = new Map<string, StreamableHTTPServerTransport>();
+const sessionExpiry = new Map<string, number>();
+const SESSION_TTL_MS = 30 * 60 * 1000;
+
+setInterval(() => {
+  const now = Date.now();
+  for (const [id, exp] of sessionExpiry) {
+    if (now > exp) {
+      transports.delete(id);
+      sessionExpiry.delete(id);
+      logger.info({ sessionId: id }, "MCP session evicted (TTL expired)");
+    }
+  }
+}, 60_000).unref();
+
+// ── Helpers ────────────────────────────────────────────────────────────────────
 
 function numOrNull(v: string | null | undefined): number | null {
   if (v == null) return null;
@@ -30,6 +47,8 @@ function numOrNull(v: string | null | undefined): number | null {
 
 const getHistoryArgsSchema = z.object({
   limit: z.number().int().min(1).max(50).default(10),
+  after: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  before: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
 });
 
 const getSessionDetailArgsSchema = z.object({
@@ -38,6 +57,11 @@ const getSessionDetailArgsSchema = z.object({
 
 const getVolumeByWeekArgsSchema = z.object({
   weeks: z.number().int().min(1).max(52).default(8),
+});
+
+const getExerciseHistoryArgsSchema = z.object({
+  exercise_name: z.string().min(1),
+  limit: z.number().int().min(1).max(100).default(30),
 });
 
 const logSessionSetSchema = z.object({
@@ -65,8 +89,15 @@ const deleteSessionArgsSchema = z.object({
 
 type PrRow = { exercise: string; weight_kg: string; reps: number | null; date: string };
 type VolumeRow = { week: Date | string; exercise: string; total_volume_kg: string };
+type ExerciseHistoryRow = {
+  date: string;
+  session_name: string;
+  set_number: number;
+  reps: number | null;
+  weight_kg: string | null;
+};
 
-// ── MCP server factory ─────────────────────────────────────────────────────────
+// ── MCP server (single shared instance) ───────────────────────────────────────
 
 function createMcpServer(): Server {
   const server = new Server(
@@ -80,7 +111,8 @@ function createMcpServer(): Server {
       {
         name: "get_history",
         description:
-          "Returns recent workout sessions with full detail (exercises and sets). Ordered by date descending.",
+          "Returns recent workout sessions with full detail (exercises and sets). Ordered by date descending. Optionally filter by date range.",
+        annotations: { readOnlyHint: true },
         inputSchema: {
           type: "object",
           properties: {
@@ -88,12 +120,21 @@ function createMcpServer(): Server {
               type: "number",
               description: "Number of sessions to return. Default 10, max 50.",
             },
+            after: {
+              type: "string",
+              description: "Only return sessions on or after this date (YYYY-MM-DD).",
+            },
+            before: {
+              type: "string",
+              description: "Only return sessions on or before this date (YYYY-MM-DD).",
+            },
           },
         },
       },
       {
         name: "get_session_detail",
         description: "Returns full detail of one specific session by ID.",
+        annotations: { readOnlyHint: true },
         inputSchema: {
           type: "object",
           properties: {
@@ -105,18 +146,21 @@ function createMcpServer(): Server {
       {
         name: "get_plans",
         description: "Returns all workout plans with their exercises and targets.",
+        annotations: { readOnlyHint: true },
         inputSchema: { type: "object", properties: {} },
       },
       {
         name: "get_prs",
         description:
-          "Returns the personal record (heaviest weight) for every exercise ever logged, with reps and date. Ordered alphabetically.",
+          "Returns the personal record (heaviest weight) for every exercise ever logged, with reps and date. Ordered alphabetically. Excludes exercises logged without weight (e.g. bodyweight pull-ups).",
+        annotations: { readOnlyHint: true },
         inputSchema: { type: "object", properties: {} },
       },
       {
         name: "get_volume_by_week",
         description:
-          "Returns total training volume (kg lifted = reps × weight_kg) aggregated by ISO week per exercise.",
+          "Returns total training volume (kg lifted = reps × weight_kg) aggregated by ISO week per exercise. Sets logged without both reps and weight are excluded from the total.",
+        annotations: { readOnlyHint: true },
         inputSchema: {
           type: "object",
           properties: {
@@ -127,11 +171,32 @@ function createMcpServer(): Server {
           },
         },
       },
+      {
+        name: "get_exercise_history",
+        description:
+          "Returns every logged set for a specific exercise in chronological order. Use this to trace strength progression over time (e.g. 'show me all my squat sessions').",
+        annotations: { readOnlyHint: true },
+        inputSchema: {
+          type: "object",
+          properties: {
+            exercise_name: {
+              type: "string",
+              description: "Exercise name to look up. Case-insensitive, partial match supported.",
+            },
+            limit: {
+              type: "number",
+              description: "Max sets to return. Default 30, max 100.",
+            },
+          },
+          required: ["exercise_name"],
+        },
+      },
       // ── Write tools ───────────────────────────────────────────────────────
       {
         name: "log_session",
         description:
           "Logs a complete workout session atomically (session + exercises + sets in one call).",
+        annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false },
         inputSchema: {
           type: "object",
           properties: {
@@ -177,6 +242,7 @@ function createMcpServer(): Server {
         name: "delete_session",
         description:
           "Permanently deletes a session and all its exercises and sets. This cannot be undone.",
+        annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false },
         inputSchema: {
           type: "object",
           properties: {
@@ -204,9 +270,16 @@ function createMcpServer(): Server {
             };
           }
 
+          const { limit, after, before } = parsed.data;
+          const conditions = [
+            after ? gte(sessions.date, after) : undefined,
+            before ? lte(sessions.date, before) : undefined,
+          ].filter(Boolean);
+
           const recentSessions = await db.query.sessions.findMany({
             orderBy: [desc(sessions.date)],
-            limit: parsed.data.limit,
+            limit,
+            where: conditions.length > 0 ? and(...(conditions as Parameters<typeof and>)) : undefined,
             with: {
               sessionExercises: {
                 orderBy: (se, { asc }) => [asc(se.sortOrder)],
@@ -233,14 +306,17 @@ function createMcpServer(): Server {
             })),
           }));
 
-          return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
+          return {
+            content: [{ type: "text", text: JSON.stringify(result, null, 2) }],
+            structuredContent: { data: result },
+          };
         }
 
         case "get_session_detail": {
           const parsed = getSessionDetailArgsSchema.safeParse(args ?? {});
           if (!parsed.success) {
             return {
-              content: [{ type: "text", text: "Error: session_id is required" }],
+              content: [{ type: "text", text: `Error: invalid arguments — ${parsed.error.message}` }],
               isError: true,
             };
           }
@@ -280,7 +356,10 @@ function createMcpServer(): Server {
             })),
           };
 
-          return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
+          return {
+            content: [{ type: "text", text: JSON.stringify(result, null, 2) }],
+            structuredContent: result,
+          };
         }
 
         case "get_plans": {
@@ -305,7 +384,10 @@ function createMcpServer(): Server {
             })),
           }));
 
-          return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
+          return {
+            content: [{ type: "text", text: JSON.stringify(result, null, 2) }],
+            structuredContent: { data: result },
+          };
         }
 
         case "get_prs": {
@@ -329,7 +411,10 @@ function createMcpServer(): Server {
             date: r.date,
           }));
 
-          return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
+          return {
+            content: [{ type: "text", text: JSON.stringify(result, null, 2) }],
+            structuredContent: { data: result },
+          };
         }
 
         case "get_volume_by_week": {
@@ -363,7 +448,50 @@ function createMcpServer(): Server {
             total_volume_kg: parseFloat(r.total_volume_kg),
           }));
 
-          return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
+          return {
+            content: [{ type: "text", text: JSON.stringify(result, null, 2) }],
+            structuredContent: { data: result },
+          };
+        }
+
+        case "get_exercise_history": {
+          const parsed = getExerciseHistoryArgsSchema.safeParse(args ?? {});
+          if (!parsed.success) {
+            return {
+              content: [{ type: "text", text: `Error: invalid arguments — ${parsed.error.message}` }],
+              isError: true,
+            };
+          }
+
+          const { exercise_name, limit } = parsed.data;
+
+          const rows = await db.execute<ExerciseHistoryRow>(sql`
+            SELECT
+              sess.date,
+              sess.name AS session_name,
+              s.set_number,
+              s.reps,
+              s.weight_kg::float AS weight_kg
+            FROM ${sets} s
+            JOIN ${sessionExercises} se ON s.session_exercise_id = se.id
+            JOIN ${sessions} sess ON se.session_id = sess.id
+            WHERE se.name ILIKE ${"%" + exercise_name + "%"}
+            ORDER BY sess.date ASC, s.set_number ASC
+            LIMIT ${limit}
+          `);
+
+          const result = rows.rows.map((r) => ({
+            date: r.date,
+            session_name: r.session_name,
+            set_number: r.set_number,
+            reps: r.reps,
+            weight_kg: r.weight_kg != null ? parseFloat(r.weight_kg) : null,
+          }));
+
+          return {
+            content: [{ type: "text", text: JSON.stringify(result, null, 2) }],
+            structuredContent: { data: result },
+          };
         }
 
         // ── Write handlers ───────────────────────────────────────────────────
@@ -411,10 +539,10 @@ function createMcpServer(): Server {
             return session.id;
           });
 
+          const result = { success: true, session_id: sessionId };
           return {
-            content: [
-              { type: "text", text: JSON.stringify({ success: true, session_id: sessionId }) },
-            ],
+            content: [{ type: "text", text: JSON.stringify(result) }],
+            structuredContent: result,
           };
         }
 
@@ -422,7 +550,7 @@ function createMcpServer(): Server {
           const parsed = deleteSessionArgsSchema.safeParse(args ?? {});
           if (!parsed.success) {
             return {
-              content: [{ type: "text", text: "Error: session_id is required" }],
+              content: [{ type: "text", text: `Error: invalid arguments — ${parsed.error.message}` }],
               isError: true,
             };
           }
@@ -440,8 +568,10 @@ function createMcpServer(): Server {
 
           await db.delete(sessions).where(eq(sessions.id, parsed.data.session_id));
 
+          const result = { success: true };
           return {
-            content: [{ type: "text", text: JSON.stringify({ success: true }) }],
+            content: [{ type: "text", text: JSON.stringify(result) }],
+            structuredContent: result,
           };
         }
 
@@ -467,6 +597,8 @@ function createMcpServer(): Server {
 
   return server;
 }
+
+const mcpServer = createMcpServer();
 
 // ── Route setup ────────────────────────────────────────────────────────────────
 
@@ -499,14 +631,15 @@ export function setupMcpRoutes(app: Express): void {
 
       transport.onclose = () => {
         transports.delete(newSessionId);
+        sessionExpiry.delete(newSessionId);
         logger.info({ sessionId: newSessionId }, "MCP session closed");
       };
 
       transports.set(newSessionId, transport);
+      sessionExpiry.set(newSessionId, Date.now() + SESSION_TTL_MS);
       logger.info({ sessionId: newSessionId }, "MCP session opened");
 
-      const server = createMcpServer();
-      await server.connect(transport);
+      await mcpServer.connect(transport);
       await transport.handleRequest(req, res, req.body);
     } catch (err) {
       logger.error({ err }, "MCP request error");
