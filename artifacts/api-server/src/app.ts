@@ -10,6 +10,10 @@ import { logger } from "./lib/logger.js";
 
 const app: Express = express();
 
+// Trust the platform's edge proxy so req.protocol reflects X-Forwarded-Proto.
+// Required on Replit (and most PaaS) for OAuth discovery to advertise https URLs.
+app.set("trust proxy", true);
+
 app.use(
   pinoHttp({
     logger,

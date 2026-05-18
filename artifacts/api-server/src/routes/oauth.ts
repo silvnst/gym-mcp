@@ -6,6 +6,15 @@ import { authCodeStore } from "../lib/authCodeStore.js";
 
 const router = Router();
 
+function escapeHtml(s: string): string {
+  return s
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
 // ── Protected Resource Metadata (RFC 9728) ────────────────────────────────────
 
 router.get("/.well-known/oauth-protected-resource", (req, res) => {
@@ -193,7 +202,7 @@ router.get("/authorize", (req, res) => {
     </ul>
     <form method="POST" action="/authorize">
       <input type="hidden" name="pending_id" value="${pendingId}" />
-      <input type="hidden" name="state" value="${state ?? ""}" />
+      <input type="hidden" name="state" value="${escapeHtml(state ?? "")}" />
       <button type="submit" class="btn btn-primary">Authorize</button>
     </form>
     <p class="footer">

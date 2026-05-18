@@ -16,11 +16,11 @@ A personal gym tracking app with workout plan management, session execution, his
 | Secret | Purpose |
 |---|---|
 | `DATABASE_URL` | Postgres connection string |
-| `MCP_API_KEY` | *(Optional)* Static Bearer token for MCP. If set, Claude.ai can connect with `Authorization: Bearer <value>` instead of going through the OAuth flow. |
+| `MCP_API_KEY` | *(Optional)* Static Bearer token for non-browser MCP clients (curl, MCP Inspector, Claude Code CLI). The Claude.ai web connector UI does not expose a header field, so Claude.ai itself always uses OAuth — this secret is only for testing/CLI flows. |
 
 MCP auth supports two modes — whichever matches is accepted:
-1. **Static key** — set `MCP_API_KEY` and paste that value into Claude.ai's connector header field
-2. **OAuth 2.0 PKCE** — no secret needed; Claude.ai initiates the flow and you click Authorize once
+1. **OAuth 2.0 PKCE** (Claude.ai web) — no secret needed; Claude.ai initiates the flow and you click Authorize once
+2. **Static key** (testing/CLI only) — set `MCP_API_KEY` and send `Authorization: Bearer <value>`
 
 ## Stack
 
@@ -120,19 +120,18 @@ MCP auth supports two modes — whichever matches is accepted:
 
 ## Connecting Claude.ai
 
-### Option A — Static API key (simpler)
-1. Set `MCP_API_KEY` to any secret string in Replit Secrets
-2. Go to **Claude.ai → Settings → Connectors → Add custom connector**
-3. Set the **Remote MCP server URL** to: `https://<deployed-host>/mcp`
-4. Add header `Authorization: Bearer <your-MCP_API_KEY-value>`
-5. Claude discovers all 7 tools
+Claude.ai's "Add custom connector" dialog only shows a URL field and optional OAuth Client ID/Secret fields — there is no header field — so the web connector always uses OAuth with Dynamic Client Registration (RFC 7591).
 
-### Option B — OAuth (no secret to manage)
 1. Go to **Claude.ai → Settings → Connectors → Add custom connector**
 2. Set the **Remote MCP server URL** to: `https://<deployed-host>/mcp`
-3. Save — Claude.ai will redirect you to your server's `/authorize` page
-4. Click **Authorize** — you'll be redirected back to Claude.ai automatically
-5. Claude discovers all 7 tools
+3. Leave OAuth Client ID / Client Secret blank — the server registers Claude.ai dynamically
+4. Save — Claude.ai will redirect you to your server's `/authorize` page
+5. Click **Authorize** — you'll be redirected back to Claude.ai automatically
+6. Claude discovers all 7 tools
+
+### Testing with non-browser clients
+
+For curl / MCP Inspector / Claude Code CLI, set `MCP_API_KEY` and use `Authorization: Bearer <value>` to skip the OAuth flow.
 
 **Example things to say to Claude:**
 - _"Log today's session: Push A — bench press 4×8 at 80kg, OHP 3×10 at 50kg"_
