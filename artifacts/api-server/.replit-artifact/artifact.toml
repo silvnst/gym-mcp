@@ -7,7 +7,7 @@ id = "3B4_FFSkEVBkAeYMFRJ2e"
 [[services]]
 localPort = 8080
 name = "API Server"
-paths = ["/api"]
+paths = ["/"]
 
 [services.development]
 run = "pnpm --filter @workspace/api-server run dev"
@@ -15,7 +15,7 @@ run = "pnpm --filter @workspace/api-server run dev"
 [services.production]
 
 [services.production.build]
-args = ["pnpm", "--filter", "@workspace/api-server", "run", "build"]
+args = ["sh", "-c", "pnpm --filter @workspace/gym-tracker build && pnpm --filter @workspace/api-server build"]
 
 [services.production.build.env]
 NODE_ENV = "production"

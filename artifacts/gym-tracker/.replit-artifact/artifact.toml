@@ -17,15 +17,6 @@ localPort = 5173
 [services.development]
 run = "pnpm --filter @workspace/gym-tracker run dev"
 
-[services.production]
-build = [ "pnpm", "--filter", "@workspace/gym-tracker", "run", "build" ]
-publicDir = "artifacts/gym-tracker/dist/public"
-serve = "static"
-
-[[services.production.rewrites]]
-from = "/*"
-to = "/index.html"
-
 [services.env]
 PORT = "5173"
 BASE_PATH = "/"
