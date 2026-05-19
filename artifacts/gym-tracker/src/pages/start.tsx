@@ -1,11 +1,7 @@
 import { useListPlans, useCreateSession, getListSessionsQueryKey } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useLocation } from "wouter";
-import { Play, Activity, Plus } from "lucide-react";
-import { format } from "date-fns";
-
-import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
+import { Play } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
 export default function StartSessionPage() {
@@ -65,60 +61,63 @@ export default function StartSessionPage() {
   };
 
   return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="text-3xl font-bold font-mono uppercase tracking-tight text-primary">Start Workout</h1>
-        <p className="text-muted-foreground">Choose a plan or start an empty session.</p>
+    <div>
+      <div className="mb-10">
+        <h2 className="text-xs font-medium tracking-widest uppercase text-muted-foreground mb-1">Train</h2>
+        <h1 className="text-4xl font-serif text-foreground">Start Workout</h1>
       </div>
 
-      <Button
-        size="lg"
-        className="w-full h-16 text-lg font-bold shadow-md bg-secondary text-secondary-foreground hover:bg-secondary/90 border border-secondary-border"
+      <button
         onClick={handleStartAdhoc}
         disabled={createSession.isPending}
         data-testid="button-start-empty"
+        className="w-full bg-primary text-primary-foreground font-medium py-4 px-6 rounded-sm shadow-sm flex justify-between items-center mb-12 disabled:opacity-60"
       >
-        <Plus className="mr-2 h-5 w-5" />
-        Start Empty Session
-      </Button>
+        <span className="text-lg">Start Empty Session</span>
+        <Play className="w-5 h-5 fill-current" />
+      </button>
 
-      <div className="space-y-4">
-        <h2 className="text-xl font-bold font-mono uppercase text-muted-foreground mt-8 mb-4">From Plan</h2>
-        
+      <div>
+        <h3 className="text-xs font-medium tracking-widest uppercase text-muted-foreground mb-4 border-b border-border pb-2">
+          From Plan
+        </h3>
+
         {isLoading ? (
-          <div className="space-y-4">
+          <div className="space-y-4 mt-6">
             {[1, 2].map((i) => (
-              <Card key={i} className="animate-pulse bg-muted h-24 border-0" />
+              <div key={i} className="animate-pulse bg-card border border-border h-20 rounded-sm" />
             ))}
           </div>
         ) : plans?.length === 0 ? (
-          <div className="text-center py-8 text-muted-foreground border border-dashed rounded-lg bg-card/50">
+          <div className="text-center py-10 text-muted-foreground border border-dashed border-border rounded-sm bg-card/50 mt-6 text-sm">
             No plans available. Go to the Plans tab to create one.
           </div>
         ) : (
-          <div className="grid gap-4">
+          <div className="space-y-4 mt-6">
             {plans?.map((plan) => (
-              <Card key={plan.id} className="group border-border hover:border-primary/50 transition-colors bg-card">
-                <CardContent className="p-4 sm:p-6 flex items-center justify-between gap-4">
-                  <div className="flex-1 min-w-0">
-                    <h3 className="font-bold text-lg truncate" data-testid={`text-plan-name-${plan.id}`}>
-                      {plan.name}
-                    </h3>
-                    <p className="text-sm text-muted-foreground mt-1 flex items-center gap-1">
-                      <Activity className="h-3 w-3" />
-                      {plan.exercises.length} exercise{plan.exercises.length === 1 ? "" : "s"}
-                    </p>
-                  </div>
-                  <Button
-                    onClick={() => handleStartPlan(plan.id)}
-                    disabled={createSession.isPending}
-                    data-testid={`button-start-plan-${plan.id}`}
-                    className="shrink-0 rounded-full h-12 w-12 p-0"
-                  >
-                    <Play className="h-5 w-5 ml-1" />
-                  </Button>
-                </CardContent>
-              </Card>
+              <div
+                key={plan.id}
+                className="flex justify-between items-center bg-card border border-border p-4 rounded-sm"
+                data-testid={`card-start-plan-${plan.id}`}
+              >
+                <div className="min-w-0 flex-1 pr-3">
+                  <h4 className="text-lg font-serif text-foreground truncate" data-testid={`text-plan-name-${plan.id}`}>
+                    {plan.name}
+                  </h4>
+                  <p className="text-sm text-muted-foreground mt-1">
+                    {plan.exercises.length} exercise{plan.exercises.length === 1 ? "" : "s"}
+                  </p>
+                </div>
+                <button
+                  onClick={() => handleStartPlan(plan.id)}
+                  disabled={createSession.isPending}
+                  data-testid={`button-start-plan-${plan.id}`}
+                  className="h-12 w-12 flex items-center justify-center rounded-full bg-background border border-border text-foreground hover:border-primary transition-colors shrink-0 disabled:opacity-60"
+                  aria-label={`Start ${plan.name}`}
+                >
+                  <Play className="w-5 h-5 ml-0.5 fill-current" />
+                </button>
+              </div>
             ))}
           </div>
         )}
