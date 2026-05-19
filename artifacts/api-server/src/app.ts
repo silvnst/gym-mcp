@@ -36,13 +36,22 @@ app.use(express.urlencoded({ extended: true }));
 app.use(oauthRouter);
 app.use("/api", router);
 
+// Secret token guard for /mcp (checked before OAuth mcpAuth)
+app.use("/mcp", (req, res, next) => {
+  const secret = process.env["MCP_SECRET"];
+  if (secret && req.query["token"] !== secret) {
+    res.status(403).json({ error: "Forbidden" });
+    return;
+  }
+  next();
+});
+
 setupMcpRoutes(app);
 
-const frontendDist = path.join(process.cwd(), "artifacts/gym-tracker/dist");
+const frontendDist = path.join(process.cwd(), "artifacts/gym-tracker/dist/public");
 
 if (fs.existsSync(frontendDist)) {
   app.use(express.static(frontendDist));
-  // Catch-all: serve index.html for any route not handled above (React Router)
   app.get("*", (_req, res) => {
     res.sendFile(path.join(frontendDist, "index.html"));
   });
