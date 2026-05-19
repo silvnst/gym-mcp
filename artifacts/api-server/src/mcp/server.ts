@@ -14,6 +14,7 @@ import {
   sessionExercises,
   sets,
   plans,
+  planExercises,
 } from "@workspace/db";
 import { logger } from "../lib/logger.js";
 
@@ -60,7 +61,31 @@ const getVolumeByWeekArgsSchema = z.object({
 
 const getExerciseHistoryArgsSchema = z.object({
   exercise_name: z.string().min(1),
-  limit: z.number().int().min(1).max(100).default(30),
+});
+
+const planExerciseInputSchema = z.object({
+  name: z.string().min(1),
+  target_sets: z.number().int().min(1),
+  target_reps: z.number().int().min(1),
+  target_weight_kg: z.number().min(0).nullable().optional(),
+  notes: z.string().nullable().optional(),
+});
+
+const createPlanArgsSchema = z.object({
+  name: z.string().min(1),
+  notes: z.string().nullable().optional(),
+  exercises: z.array(planExerciseInputSchema),
+});
+
+const updatePlanArgsSchema = z.object({
+  plan_id: z.string().min(1),
+  name: z.string().min(1),
+  notes: z.string().nullable().optional(),
+  exercises: z.array(planExerciseInputSchema),
+});
+
+const deletePlanArgsSchema = z.object({
+  plan_id: z.string().min(1),
 });
 
 const logSessionSetSchema = z.object({
@@ -89,12 +114,17 @@ const deleteSessionArgsSchema = z.object({
 type PrRow = { exercise: string; weight_kg: string; reps: number | null; date: string };
 type VolumeRow = { week: Date | string; exercise: string; total_volume_kg: string };
 type ExerciseHistoryRow = {
+  session_id: string;
   date: string;
   session_name: string;
   set_number: number;
   reps: number | null;
   weight_kg: string | null;
+  target_reps: number | null;
+  target_weight_kg: string | null;
 };
+type OverdueRow = { exercise: string; last_date: string };
+type VolumeTrendRow = { exercise: string; current_2w: string | null; previous_2w: string | null };
 
 // ── MCP server (single shared instance) ───────────────────────────────────────
 
@@ -173,7 +203,7 @@ function createMcpServer(): Server {
       {
         name: "get_exercise_history",
         description:
-          "Returns every logged set for a specific exercise in chronological order. Use this to trace strength progression over time (e.g. 'show me all my squat sessions').",
+          "Returns all sessions for a specific exercise grouped by date (newest first), with each set's reps, weight, and whether it hit the plan target. Use to trace strength progression over time.",
         annotations: { readOnlyHint: true },
         inputSchema: {
           type: "object",
@@ -182,15 +212,89 @@ function createMcpServer(): Server {
               type: "string",
               description: "Exercise name to look up. Case-insensitive, partial match supported.",
             },
-            limit: {
-              type: "number",
-              description: "Max sets to return. Default 30, max 100.",
-            },
           },
           required: ["exercise_name"],
         },
       },
+      {
+        name: "get_training_context",
+        description:
+          "Returns a full training snapshot in one call: last 3 sessions with exercises and sets, all personal records, exercises overdue for 14+ days (from plans), and per-exercise volume trend (last 2 weeks vs prior 2 weeks). Use this as the first call when the user wants training insights or recommendations.",
+        annotations: { readOnlyHint: true },
+        inputSchema: { type: "object", properties: {} },
+      },
       // ── Write tools ───────────────────────────────────────────────────────
+      {
+        name: "create_plan",
+        description: "Creates a new workout plan with exercises atomically.",
+        annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false },
+        inputSchema: {
+          type: "object",
+          properties: {
+            name: { type: "string", description: "Plan name, e.g. 'PPL Push A'." },
+            notes: { type: "string", description: "Optional notes for the plan." },
+            exercises: {
+              type: "array",
+              description: "Ordered list of exercises for the plan.",
+              items: {
+                type: "object",
+                properties: {
+                  name: { type: "string", description: "Exercise name." },
+                  target_sets: { type: "number", description: "Number of sets." },
+                  target_reps: { type: "number", description: "Target reps per set." },
+                  target_weight_kg: { type: "number", description: "Target weight in kg (optional)." },
+                  notes: { type: "string", description: "Optional exercise notes." },
+                },
+                required: ["name", "target_sets", "target_reps"],
+              },
+            },
+          },
+          required: ["name", "exercises"],
+        },
+      },
+      {
+        name: "update_plan",
+        description:
+          "Replaces all exercises for an existing plan atomically. Always send the full exercise list — partial updates are not supported.",
+        annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
+        inputSchema: {
+          type: "object",
+          properties: {
+            plan_id: { type: "string", description: "The plan ID to update." },
+            name: { type: "string", description: "New plan name." },
+            notes: { type: "string", description: "Optional notes for the plan." },
+            exercises: {
+              type: "array",
+              description: "Full replacement list of exercises.",
+              items: {
+                type: "object",
+                properties: {
+                  name: { type: "string" },
+                  target_sets: { type: "number" },
+                  target_reps: { type: "number" },
+                  target_weight_kg: { type: "number" },
+                  notes: { type: "string" },
+                },
+                required: ["name", "target_sets", "target_reps"],
+              },
+            },
+          },
+          required: ["plan_id", "name", "exercises"],
+        },
+      },
+      {
+        name: "delete_plan",
+        description:
+          "Permanently deletes a workout plan and its exercises. Sessions that used the plan keep their recorded data.",
+        annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false },
+        inputSchema: {
+          type: "object",
+          properties: {
+            plan_id: { type: "string", description: "The plan ID to delete." },
+          },
+          required: ["plan_id"],
+        },
+      },
       {
         name: "log_session",
         description:
@@ -462,38 +566,268 @@ function createMcpServer(): Server {
             };
           }
 
-          const { exercise_name, limit } = parsed.data;
+          const { exercise_name } = parsed.data;
 
           const rows = await db.execute<ExerciseHistoryRow>(sql`
             SELECT
+              sess.id AS session_id,
               sess.date,
               sess.name AS session_name,
               s.set_number,
               s.reps,
-              s.weight_kg::float AS weight_kg
+              s.weight_kg,
+              se.target_reps,
+              se.target_weight_kg
             FROM ${sets} s
             JOIN ${sessionExercises} se ON s.session_exercise_id = se.id
             JOIN ${sessions} sess ON se.session_id = sess.id
             WHERE se.name ILIKE ${"%" + exercise_name + "%"}
-            ORDER BY sess.date ASC, s.set_number ASC
-            LIMIT ${limit}
+            ORDER BY sess.date DESC, s.set_number ASC
           `);
 
-          const result = rows.rows.map((r) => ({
-            date: r.date,
-            session_name: r.session_name,
-            set_number: r.set_number,
-            reps: r.reps,
-            weight_kg: r.weight_kg != null ? parseFloat(r.weight_kg) : null,
-          }));
+          // Group flat rows into sessions
+          const sessionMap = new Map<string, {
+            date: string;
+            session_name: string;
+            sets: { reps: number | null; weight_kg: number | null; hit_target: boolean | null }[];
+          }>();
+
+          for (const r of rows.rows) {
+            if (!sessionMap.has(r.session_id)) {
+              sessionMap.set(r.session_id, { date: r.date, session_name: r.session_name, sets: [] });
+            }
+            const weightKg = r.weight_kg != null ? parseFloat(r.weight_kg) : null;
+            const targetReps = r.target_reps;
+            const targetWeightKg = r.target_weight_kg != null ? parseFloat(r.target_weight_kg) : null;
+            let hitTarget: boolean | null = null;
+            if (targetReps != null && r.reps != null) {
+              hitTarget = r.reps >= targetReps && (targetWeightKg == null || (weightKg != null && weightKg >= targetWeightKg));
+            }
+            sessionMap.get(r.session_id)!.sets.push({ reps: r.reps, weight_kg: weightKg, hit_target: hitTarget });
+          }
+
+          const sessionsArr = Array.from(sessionMap.values());
+          const result = {
+            exercise: exercise_name,
+            total_sessions: sessionsArr.length,
+            sessions: sessionsArr,
+          };
 
           return {
             content: [{ type: "text", text: JSON.stringify(result, null, 2) }],
-            structuredContent: { data: result },
+            structuredContent: result,
+          };
+        }
+
+        case "get_training_context": {
+          const [recentSessions, prRows, overdueRows, trendRows] = await Promise.all([
+            db.query.sessions.findMany({
+              orderBy: [desc(sessions.date)],
+              limit: 3,
+              with: {
+                sessionExercises: {
+                  orderBy: (se, { asc }) => [asc(se.sortOrder)],
+                  with: { sets: { orderBy: (s, { asc }) => [asc(s.setNumber)] } },
+                },
+              },
+            }),
+            db.execute<PrRow>(sql`
+              SELECT DISTINCT ON (se.name)
+                se.name AS exercise,
+                s.weight_kg::float AS weight_kg,
+                s.reps,
+                sess.date
+              FROM ${sets} s
+              JOIN ${sessionExercises} se ON s.session_exercise_id = se.id
+              JOIN ${sessions} sess ON se.session_id = sess.id
+              WHERE s.weight_kg IS NOT NULL
+              ORDER BY se.name ASC, s.weight_kg DESC
+            `),
+            db.execute<OverdueRow>(sql`
+              SELECT
+                pe.name AS exercise,
+                MAX(sess.date) AS last_date
+              FROM ${planExercises} pe
+              LEFT JOIN ${sessionExercises} se ON se.name ILIKE pe.name
+              LEFT JOIN ${sessions} sess ON se.session_id = sess.id
+              GROUP BY pe.name
+              HAVING MAX(sess.date) IS NULL OR MAX(sess.date) < CURRENT_DATE - INTERVAL '14 days'
+            `),
+            db.execute<VolumeTrendRow>(sql`
+              SELECT
+                se.name AS exercise,
+                SUM(s.reps * s.weight_kg) FILTER (WHERE sess.date >= CURRENT_DATE - INTERVAL '14 days')::float AS current_2w,
+                SUM(s.reps * s.weight_kg) FILTER (WHERE sess.date >= CURRENT_DATE - INTERVAL '28 days' AND sess.date < CURRENT_DATE - INTERVAL '14 days')::float AS previous_2w
+              FROM ${sets} s
+              JOIN ${sessionExercises} se ON s.session_exercise_id = se.id
+              JOIN ${sessions} sess ON se.session_id = sess.id
+              WHERE s.reps IS NOT NULL AND s.weight_kg IS NOT NULL
+                AND sess.date >= CURRENT_DATE - INTERVAL '28 days'
+              GROUP BY se.name
+              ORDER BY se.name ASC
+            `),
+          ]);
+
+          const result = {
+            recent_sessions: recentSessions.map((session) => ({
+              id: session.id,
+              date: session.date,
+              name: session.name,
+              notes: session.notes,
+              exercises: session.sessionExercises.map((se) => ({
+                name: se.name,
+                targetSets: se.targetSets,
+                targetReps: se.targetReps,
+                targetWeightKg: numOrNull(se.targetWeightKg),
+                sets: se.sets.map((s) => ({
+                  setNumber: s.setNumber,
+                  reps: s.reps,
+                  weightKg: numOrNull(s.weightKg),
+                })),
+              })),
+            })),
+            personal_records: prRows.rows.map((r) => ({
+              exercise: r.exercise,
+              weight_kg: parseFloat(r.weight_kg),
+              reps: r.reps,
+              date: r.date,
+            })),
+            overdue_exercises: overdueRows.rows.map((r) => ({
+              name: r.exercise,
+              days_since_last_session: r.last_date
+                ? Math.floor((Date.now() - new Date(r.last_date).getTime()) / 86_400_000)
+                : null,
+            })),
+            volume_trend: trendRows.rows.map((r) => ({
+              exercise: r.exercise,
+              current_2w_volume: r.current_2w != null ? parseFloat(r.current_2w) : 0,
+              previous_2w_volume: r.previous_2w != null ? parseFloat(r.previous_2w) : 0,
+            })),
+          };
+
+          return {
+            content: [{ type: "text", text: JSON.stringify(result, null, 2) }],
+            structuredContent: result,
           };
         }
 
         // ── Write handlers ───────────────────────────────────────────────────
+
+        case "create_plan": {
+          const parsed = createPlanArgsSchema.safeParse(args ?? {});
+          if (!parsed.success) {
+            return {
+              content: [{ type: "text", text: `Error: invalid arguments — ${parsed.error.message}` }],
+              isError: true,
+            };
+          }
+
+          const { name, notes, exercises } = parsed.data;
+
+          const planId = await db.transaction(async (tx) => {
+            const [plan] = await tx
+              .insert(plans)
+              .values({ name, notes: notes ?? null })
+              .returning({ id: plans.id });
+
+            if (exercises.length > 0) {
+              await tx.insert(planExercises).values(
+                exercises.map((ex, i) => ({
+                  planId: plan.id,
+                  name: ex.name,
+                  sortOrder: i,
+                  targetSets: ex.target_sets,
+                  targetReps: ex.target_reps,
+                  targetWeightKg: ex.target_weight_kg != null ? ex.target_weight_kg.toString() : null,
+                  notes: ex.notes ?? null,
+                })),
+              );
+            }
+
+            return plan.id;
+          });
+
+          const result = { success: true, plan_id: planId };
+          return {
+            content: [{ type: "text", text: JSON.stringify(result) }],
+            structuredContent: result,
+          };
+        }
+
+        case "update_plan": {
+          const parsed = updatePlanArgsSchema.safeParse(args ?? {});
+          if (!parsed.success) {
+            return {
+              content: [{ type: "text", text: `Error: invalid arguments — ${parsed.error.message}` }],
+              isError: true,
+            };
+          }
+
+          const { plan_id, name, notes, exercises } = parsed.data;
+
+          const updated = await db.transaction(async (tx) => {
+            const existing = await tx.query.plans.findFirst({ where: eq(plans.id, plan_id) });
+            if (!existing) return false;
+
+            await tx.update(plans).set({ name, notes: notes ?? null }).where(eq(plans.id, plan_id));
+            await tx.delete(planExercises).where(eq(planExercises.planId, plan_id));
+
+            if (exercises.length > 0) {
+              await tx.insert(planExercises).values(
+                exercises.map((ex, i) => ({
+                  planId: plan_id,
+                  name: ex.name,
+                  sortOrder: i,
+                  targetSets: ex.target_sets,
+                  targetReps: ex.target_reps,
+                  targetWeightKg: ex.target_weight_kg != null ? ex.target_weight_kg.toString() : null,
+                  notes: ex.notes ?? null,
+                })),
+              );
+            }
+
+            return true;
+          });
+
+          if (!updated) {
+            return {
+              content: [{ type: "text", text: `Error: Plan "${plan_id}" not found` }],
+              isError: true,
+            };
+          }
+
+          const result = { success: true };
+          return {
+            content: [{ type: "text", text: JSON.stringify(result) }],
+            structuredContent: result,
+          };
+        }
+
+        case "delete_plan": {
+          const parsed = deletePlanArgsSchema.safeParse(args ?? {});
+          if (!parsed.success) {
+            return {
+              content: [{ type: "text", text: `Error: invalid arguments — ${parsed.error.message}` }],
+              isError: true,
+            };
+          }
+
+          const existing = await db.query.plans.findFirst({ where: eq(plans.id, parsed.data.plan_id) });
+          if (!existing) {
+            return {
+              content: [{ type: "text", text: `Error: Plan "${parsed.data.plan_id}" not found` }],
+              isError: true,
+            };
+          }
+
+          await db.delete(plans).where(eq(plans.id, parsed.data.plan_id));
+
+          const result = { success: true };
+          return {
+            content: [{ type: "text", text: JSON.stringify(result) }],
+            structuredContent: result,
+          };
+        }
 
         case "log_session": {
           const parsed = logSessionArgsSchema.safeParse(args ?? {});

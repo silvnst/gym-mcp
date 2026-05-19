@@ -33,9 +33,7 @@ This is wired up in `.replit` under `[deployment.run]` so Replit runs it automat
 |---|---|---|
 | `DATABASE_URL` | Yes | Postgres connection string |
 | `PORT` | Yes | Port the Express server listens on (use `8080` on Replit) |
-| `MCP_CLIENT_ID` | Yes | Arbitrary string; identifies this OAuth server to Claude.ai |
-| `MCP_CLIENT_SECRET` | Yes | Arbitrary string; kept server-side, never sent to clients |
-| `MCP_SECRET` | No | If set, `/mcp` requires `?token=<value>` on every request — blocks unauthenticated discovery of the MCP endpoint |
+| `MCP_SECRET` | Recommended | If set, `/mcp` requires `?token=<value>` on every request — primary auth guard for the MCP endpoint |
 | `FRONTEND_ORIGIN` | No | Restricts CORS to a specific origin (e.g. `https://your-app.replit.app`); defaults to `*` |
 
 ## Stack
@@ -55,11 +53,8 @@ This is wired up in `.replit` under `[deployment.run]` so Replit runs it automat
 - `lib/api-spec/openapi.yaml` — source of truth for all REST API contracts
 - `lib/db/src/schema/index.ts` — Drizzle ORM schema (all 5 tables + relations)
 - `artifacts/api-server/src/routes/` — REST route handlers (plans, sessions, sets, health)
-- `artifacts/api-server/src/routes/oauth.ts` — OAuth 2.0 discovery, `/authorize`, and `/token` endpoints
-- `artifacts/api-server/src/mcp/server.ts` — MCP server with all 7 tools
-- `artifacts/api-server/src/middlewares/mcpAuth.ts` — Bearer token validation (token store)
-- `artifacts/api-server/src/lib/tokenStore.ts` — in-memory access token store (1-hour TTL)
-- `artifacts/api-server/src/lib/authCodeStore.ts` — in-memory auth code store (10-min TTL, used during OAuth flow)
+- `artifacts/api-server/src/app.ts` — Express setup; MCP_SECRET query-param guard at lines 39–47
+- `artifacts/api-server/src/mcp/server.ts` — MCP server with all 12 tools
 
 ### Frontend
 - `artifacts/gym-tracker/src/App.tsx` — router setup (Wouter)
@@ -77,9 +72,8 @@ This is wired up in `.replit` under `[deployment.run]` so Replit runs it automat
 ## Architecture decisions
 
 - MCP uses Streamable HTTP transport (MCP spec 2025-03-26) at `POST /mcp` — required by Claude.ai remote connectors
-- MCP auth uses OAuth 2.0 Authorization Code + PKCE — Claude.ai initiates the flow, user clicks "Authorize" once, tokens expire after 1 hour and are auto-renewed
-- No pre-shared secrets needed for MCP; security comes from PKCE and the fact that the auth code can only be exchanged by the party that initiated the flow
-- OAuth auth codes are stored in-memory (5 min TTL); access tokens are stored in-memory (1 hr TTL) — reconnect after server restart
+- MCP auth uses `MCP_SECRET` query-param guard: if the env var is set, every `/mcp` request must include `?token=<secret>`; if unset the endpoint is open (local dev only)
+- A fresh `Server` instance from `@modelcontextprotocol/sdk` is created per connection — the SDK forbids connecting one `Server` to more than one transport simultaneously
 - Cascade deletes: plan → plan_exercises; session → session_exercises → sets
 - Finish button in active session is blocked via `useIsMutating()` to prevent navigating away before pending set saves flush
 - `lib/api-zod/src/index.ts` only re-exports `./generated/api` (not `./generated/types`) to avoid name collisions with Orval-generated Zod schemas
@@ -103,18 +97,34 @@ This is wired up in `.replit` under `[deployment.run]` so Replit runs it automat
 
 | Tool | Input | Description |
 |---|---|---|
-| `get_history` | `limit` (default 10, max 50) | Recent sessions with full exercises + sets, newest first |
+| `get_training_context` | — | One-shot context: last 3 sessions, all PRs, overdue exercises (14+ days), volume trend (last 2 weeks vs prior 2 weeks) |
+| `get_history` | `limit` (default 10, max 50), `after`, `before` (YYYY-MM-DD) | Recent sessions with full exercises + sets, newest first |
 | `get_session_detail` | `session_id` | Full detail of one session |
 | `get_plans` | — | All workout plans with exercises and targets |
 | `get_prs` | — | Personal record (heaviest set) per exercise, alphabetically |
 | `get_volume_by_week` | `weeks` (default 8, max 52) | Total volume (reps × kg) per exercise per ISO week |
+| `get_exercise_history` | `exercise_name` | All sessions for an exercise grouped by date, with hit_target flag per set |
 
 #### Write tools
 
 | Tool | Input | Description |
 |---|---|---|
+| `create_plan` | `name`, `exercises[]` (+ optional `notes`) | Creates a new workout plan with exercises atomically |
+| `update_plan` | `plan_id`, `name`, `exercises[]` (+ optional `notes`) | Replaces all exercises for a plan atomically |
+| `delete_plan` | `plan_id` | Permanently deletes a plan (sessions linked to it keep their data) |
 | `log_session` | `date`, `name`, `exercises[]` (+ optional `notes`) | Creates a session with all exercises and sets in one atomic call |
 | `delete_session` | `session_id` | Permanently deletes a session and all its exercises/sets |
+
+**`create_plan` / `update_plan` exercise shape:**
+```json
+{
+  "name": "Back Squat",
+  "target_sets": 4,
+  "target_reps": 5,
+  "target_weight_kg": 102.5,
+  "notes": "Belt on working sets"
+}
+```
 
 **`log_session` input shape:**
 ```json
@@ -138,18 +148,16 @@ This is wired up in `.replit` under `[deployment.run]` so Replit runs it automat
 
 1. Go to **Claude.ai → Settings → Connectors → Add custom connector**
 2. Set the **Remote MCP server URL** to: `https://<deployed-host>/mcp`
-   - If `MCP_SECRET` is configured, append the token: `https://<deployed-host>/mcp?token=<your-secret>`
-3. Save — Claude.ai will redirect you to your server's `/authorize` page
-4. Click **Authorize** — you'll be redirected back to Claude.ai automatically
-5. Claude discovers all 7 tools
-
-No Client ID or Client Secret is required from the Claude.ai side. The OAuth flow uses PKCE for security.
+   - If `MCP_SECRET` is configured (recommended), append the token: `https://<deployed-host>/mcp?token=<your-secret>`
+3. Save — Claude discovers all 12 tools immediately, no authorization step required
 
 **Example things to say to Claude:**
+- _"Give me a full training context — what have I done recently, any overdue exercises?"_
 - _"Log today's session: Push A — bench press 4×8 at 80kg, OHP 3×10 at 50kg"_
+- _"Create a new plan called 'PPL Push' with bench press 4×8 at 80kg and OHP 3×10 at 50kg"_
 - _"What are my current PRs?"_
+- _"Show me all my squat sessions"_
 - _"How has my squat volume changed over the last 6 weeks?"_
-- _"Show me last Tuesday's session in detail"_
 - _"Delete yesterday's session"_
 
 ## Gotchas
@@ -157,6 +165,6 @@ No Client ID or Client Secret is required from the Claude.ai side. The OAuth flo
 - After changing `lib/api-spec/openapi.yaml`, always run codegen before using hooks
 - `lib/api-zod/src/index.ts` should only export from `./generated/api` — Orval sometimes regenerates it with an extra `./generated/types` line; remove it if it reappears
 - The `zod/v4` subpath import doesn't bundle with esbuild — use `zod` directly in api-server routes
-- Auth codes and access tokens are in-memory — if the API server restarts, active MCP sessions will need to re-authorize (Claude.ai does this automatically on next use)
 - In production the Express server serves the compiled frontend from `artifacts/gym-tracker/dist/public`; if that directory doesn't exist (e.g. after a fresh clone) run the frontend build before starting the server
-- `PUT /plans/:id` replaces all exercises for the plan atomically — always send the full exercises array, not a partial update
+- `PUT /plans/:id` replaces all exercises for the plan atomically — always send the full exercises array, not a partial update; the MCP `update_plan` tool follows the same contract
+- `update_plan` cascades: existing plan_exercises are deleted and recreated, so plan_exercise_id references on session_exercises will be set to null (by the DB's `onDelete: "set null"` constraint) — historical session data is preserved
