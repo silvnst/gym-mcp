@@ -26,6 +26,10 @@ timeoutMs = 20000
 localPort = 8080
 externalPort = 80
 
+[[ports]]
+localPort = 9999
+externalPort = 3000
+
 [nix]
 channel = "stable-25_05"
 packages = ["psmisc"]
