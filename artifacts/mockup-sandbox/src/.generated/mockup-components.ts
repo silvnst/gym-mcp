@@ -12,5 +12,9 @@ export const modules: ModuleMap = {
   "./components/mockups/gym-power/History.tsx": () => import("../components/mockups/gym-power/History.tsx"),
   "./components/mockups/gym-power/Plans.tsx": () => import("../components/mockups/gym-power/Plans.tsx"),
   "./components/mockups/gym-power/Session.tsx": () => import("../components/mockups/gym-power/Session.tsx"),
-  "./components/mockups/gym-power/Start.tsx": () => import("../components/mockups/gym-power/Start.tsx")
+  "./components/mockups/gym-power/Start.tsx": () => import("../components/mockups/gym-power/Start.tsx"),
+  "./components/mockups/gym-current/History.tsx": () => import("../components/mockups/gym-current/History.tsx"),
+  "./components/mockups/gym-current/Plans.tsx": () => import("../components/mockups/gym-current/Plans.tsx"),
+  "./components/mockups/gym-current/Session.tsx": () => import("../components/mockups/gym-current/Session.tsx"),
+  "./components/mockups/gym-current/Start.tsx": () => import("../components/mockups/gym-current/Start.tsx")
 };
