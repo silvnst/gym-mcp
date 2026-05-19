@@ -597,8 +597,6 @@ function createMcpServer(): Server {
   return server;
 }
 
-const mcpServer = createMcpServer();
-
 // ── Route setup ────────────────────────────────────────────────────────────────
 
 export function setupMcpRoutes(app: Express): void {
@@ -638,6 +636,9 @@ export function setupMcpRoutes(app: Express): void {
       sessionExpiry.set(newSessionId, Date.now() + SESSION_TTL_MS);
       logger.info({ sessionId: newSessionId }, "MCP session opened");
 
+      // A fresh Server instance is required per connection — the MCP SDK
+      // forbids connecting a single Server to more than one transport.
+      const mcpServer = createMcpServer();
       await mcpServer.connect(transport);
       await transport.handleRequest(req, res, req.body);
     } catch (err) {
