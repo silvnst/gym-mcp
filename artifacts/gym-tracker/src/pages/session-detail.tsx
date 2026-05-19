@@ -57,7 +57,7 @@ export default function SessionDetailPage() {
 
       {/* Session overview card */}
       <Card className="bg-card border border-border rounded-sm">
-        <CardContent className="p-6">
+        <CardContent className="p-5">
           <h2 className="text-2xl font-serif mb-2">{session.name}</h2>
           <div className="flex flex-wrap items-center gap-x-6 gap-y-2 text-muted-foreground text-sm">
             <span className="flex items-center gap-2">
@@ -66,7 +66,7 @@ export default function SessionDetailPage() {
             </span>
           </div>
 
-          <div className="grid grid-cols-2 gap-4 mt-6">
+          <div className="grid grid-cols-2 gap-3 mt-5">
             <div className="bg-background rounded-sm p-4 border border-border">
               <div className="text-[10px] text-muted-foreground uppercase font-medium tracking-widest mb-1">Total Volume</div>
               <div className="text-2xl font-serif text-primary">{totalVolume > 0 ? `${totalVolume} kg` : "—"}</div>
@@ -94,17 +94,17 @@ export default function SessionDetailPage() {
             .sort((a, b) => a.sortOrder - b.sortOrder)
             .map((exercise, index) => {
               const allSets = (exercise.sets ?? []).slice().sort((a, b) => a.setNumber - b.setNumber);
-              const hasTarget = exercise.targetReps != null || exercise.targetWeightKg != null;
+              const hasTarget = exercise.targetReps != null || exercise.targetWeightKg != null || exercise.targetSets != null;
 
               return (
                 <div key={exercise.id} className="space-y-3">
-                  <div className="flex items-baseline justify-between gap-3">
+                  <div className="flex items-baseline justify-between gap-3 flex-wrap">
                     <div className="flex items-baseline gap-2">
                       <span className="text-xl font-serif text-muted-foreground">{index + 1}.</span>
                       <h4 className="text-2xl font-serif text-foreground">{exercise.name}</h4>
                     </div>
                     {hasTarget && (
-                      <span className="text-xs font-medium text-primary shrink-0">
+                      <span className="text-xs font-medium text-primary">
                         Target: {exercise.targetSets ?? "—"}×{exercise.targetReps ?? "—"}
                         {exercise.targetWeightKg ? ` @ ${exercise.targetWeightKg}kg` : ""}
                       </span>
@@ -114,53 +114,43 @@ export default function SessionDetailPage() {
                   {allSets.length === 0 ? (
                     <p className="text-sm text-muted-foreground italic pl-6">No sets logged.</p>
                   ) : (
-                    <div className="overflow-x-auto rounded-sm border border-border/50">
-                      <table className="w-full text-sm">
-                        <thead className="bg-muted/50 text-muted-foreground text-[10px] font-medium tracking-widest uppercase">
-                          <tr>
-                            <th className="py-2 px-3 text-center w-12">Set</th>
-                            <th className="py-2 px-3 text-right">Target kg</th>
-                            <th className="py-2 px-3 text-right text-foreground">Actual kg</th>
-                            <th className="py-2 px-3 text-right">Target Reps</th>
-                            <th className="py-2 px-3 text-right text-foreground">Actual Reps</th>
-                            <th className="py-2 px-3 text-right">Vol</th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-border/30">
-                          {allSets.map((set) => {
-                            const actualReps = set.reps;
-                            const actualWeight = set.weightKg;
-                            const vol =
-                              actualReps != null && actualWeight != null
-                                ? actualReps * actualWeight
-                                : null;
-                            const isComplete = actualReps != null && actualWeight != null;
+                    <div className="rounded-sm border border-border/50 overflow-hidden">
+                      {/* Mobile-optimised 4-column table: Set | kg | Reps | Vol */}
+                      <div className="grid grid-cols-[2.5rem_1fr_1fr_1fr] text-[10px] font-medium tracking-widest uppercase text-muted-foreground bg-muted/50 px-3 py-2 gap-2">
+                        <div className="text-center">Set</div>
+                        <div className="text-right">kg</div>
+                        <div className="text-right">Reps</div>
+                        <div className="text-right">Vol</div>
+                      </div>
+                      <div className="divide-y divide-border/30">
+                        {allSets.map((set) => {
+                          const vol =
+                            set.reps != null && set.weightKg != null
+                              ? set.reps * set.weightKg
+                              : null;
+                          const isComplete = set.reps != null && set.weightKg != null;
 
-                            return (
-                              <tr key={set.id} className={isComplete ? "bg-card" : "bg-muted/20"}>
-                                <td className="py-2 px-3 text-center font-serif text-muted-foreground">
-                                  {set.setNumber}
-                                </td>
-                                <td className="py-2 px-3 text-right text-muted-foreground">
-                                  {exercise.targetWeightKg ?? "—"}
-                                </td>
-                                <td className="py-2 px-3 text-right font-medium text-foreground">
-                                  {actualWeight ?? <span className="text-muted-foreground/50">—</span>}
-                                </td>
-                                <td className="py-2 px-3 text-right text-muted-foreground">
-                                  {exercise.targetReps ?? "—"}
-                                </td>
-                                <td className="py-2 px-3 text-right font-medium text-foreground">
-                                  {actualReps ?? <span className="text-muted-foreground/50">—</span>}
-                                </td>
-                                <td className="py-2 px-3 text-right font-serif text-primary/80">
-                                  {vol != null && vol > 0 ? vol : <span className="text-muted-foreground/50">—</span>}
-                                </td>
-                              </tr>
-                            );
-                          })}
-                        </tbody>
-                      </table>
+                          return (
+                            <div
+                              key={set.id}
+                              className={`grid grid-cols-[2.5rem_1fr_1fr_1fr] gap-2 px-3 py-2.5 text-sm items-center ${
+                                isComplete ? "bg-card" : "bg-muted/10"
+                              }`}
+                            >
+                              <div className="text-center font-serif text-muted-foreground text-xs">{set.setNumber}</div>
+                              <div className="text-right font-medium text-foreground">
+                                {set.weightKg ?? <span className="text-muted-foreground/40">—</span>}
+                              </div>
+                              <div className="text-right font-medium text-foreground">
+                                {set.reps ?? <span className="text-muted-foreground/40">—</span>}
+                              </div>
+                              <div className="text-right font-serif text-primary/80 text-xs">
+                                {vol != null && vol > 0 ? vol : <span className="text-muted-foreground/40">—</span>}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
                     </div>
                   )}
                 </div>
