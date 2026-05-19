@@ -14,6 +14,26 @@ env = { "CI" = "true" }
 [workflows]
 runButton = "Project"
 
+[[workflows.workflow]]
+name = "Project"
+mode = "parallel"
+author = "agent"
+
+[[workflows.workflow.tasks]]
+task = "workflow.run"
+args = "artifacts/gym-mobile: Gym Tracker Mobile"
+
+[[workflows.workflow]]
+name = "artifacts/gym-mobile: Gym Tracker Mobile"
+author = "agent"
+
+[workflows.workflow.metadata]
+outputType = "webview"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "PORT=8099 pnpm --filter @workspace/gym-mobile run dev"
+
 [agent]
 stack = "PNPM_WORKSPACE"
 expertMode = true

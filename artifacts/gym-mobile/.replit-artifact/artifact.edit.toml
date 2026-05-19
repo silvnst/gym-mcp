@@ -1,0 +1,22 @@
+kind = "web"
+previewPath = "/gym-mobile/"
+title = "Gym Tracker Mobile"
+version = "1.0.0"
+id = "artifacts/gym-mobile"
+router = "path"
+
+[[integratedSkills]]
+name = "expo"
+version = "1.0.0"
+
+[[services]]
+name = "web"
+paths = ["/gym-mobile/"]
+localPort = 8099
+
+[services.development]
+run = "pnpm --filter @workspace/gym-mobile run dev"
+
+[services.env]
+PORT = "8099"
+BASE_PATH = "/gym-mobile/"
