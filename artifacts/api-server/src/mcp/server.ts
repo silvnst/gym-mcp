@@ -15,7 +15,6 @@ import {
   sets,
   plans,
 } from "@workspace/db";
-import { mcpAuth } from "../middlewares/mcpAuth.js";
 import { logger } from "../lib/logger.js";
 
 // ── Transport session state ────────────────────────────────────────────────────
@@ -604,7 +603,7 @@ const mcpServer = createMcpServer();
 
 export function setupMcpRoutes(app: Express): void {
   // Single endpoint handles POST (new session or message), GET (SSE stream), DELETE (close session)
-  app.all("/mcp", mcpAuth, async (req, res) => {
+  app.all("/mcp", async (req, res) => {
     try {
       const sessionId = req.headers["mcp-session-id"] as string | undefined;
 

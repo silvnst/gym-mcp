@@ -4,7 +4,6 @@ import pinoHttp from "pino-http";
 import path from "node:path";
 import fs from "node:fs";
 import router from "./routes/index.js";
-import oauthRouter from "./routes/oauth.js";
 import { setupMcpRoutes } from "./mcp/server.js";
 import { logger } from "./lib/logger.js";
 
@@ -33,12 +32,10 @@ app.use(cors({ origin: process.env["FRONTEND_ORIGIN"] ?? "*" }));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-app.use(oauthRouter);
 app.use("/api", router);
 
-// Secret token guard for /mcp (checked before OAuth mcpAuth).
-// Fails closed: if MCP_SECRET is set, the request token must match;
-// if MCP_SECRET is unset the guard is skipped (local dev only).
+// MCP_SECRET guard: if set, the request must supply it as ?token=.
+// If unset, the guard is skipped (local dev only).
 app.use("/mcp", (req, res, next) => {
   const secret = process.env["MCP_SECRET"];
   const token = req.query["token"] as string | undefined;
