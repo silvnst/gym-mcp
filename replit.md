@@ -4,8 +4,24 @@ A personal gym tracking app with workout plan management, session execution, his
 
 ## Run & Operate
 
-- `pnpm --filter @workspace/api-server run dev` — run the API server (port 8080)
-- `pnpm --filter @workspace/gym-tracker run dev` — run the frontend (port from `$PORT`)
+### Development (two separate servers)
+
+- `pnpm --filter @workspace/api-server run dev` — compile + start the API server on port 8080
+- `pnpm --filter @workspace/gym-tracker run dev` — start the Vite dev server (port from `$PORT`)
+
+### Production / Replit deployment (single server)
+
+The frontend is built into a static bundle and served by the Express server. Only one port (8080 → externalPort 80) is exposed.
+
+```sh
+# Build frontend, then start Express (serves both API and static files)
+pnpm --filter @workspace/gym-tracker build && pnpm --filter @workspace/api-server start
+```
+
+This is wired up in `.replit` under `[deployment.run]` so Replit runs it automatically on deploy.
+
+### Other commands
+
 - `pnpm run typecheck` — full typecheck across all packages
 - `pnpm run build` — typecheck + build all packages
 - `pnpm --filter @workspace/api-spec run codegen` — regenerate API hooks and Zod schemas from the OpenAPI spec
@@ -13,11 +29,14 @@ A personal gym tracking app with workout plan management, session execution, his
 
 ### Required secrets
 
-| Secret | Purpose |
-|---|---|
-| `DATABASE_URL` | Postgres connection string |
-
-No other secrets required — MCP auth uses OAuth 2.0 Authorization Code + PKCE (no pre-shared keys needed).
+| Variable | Required | Purpose |
+|---|---|---|
+| `DATABASE_URL` | Yes | Postgres connection string |
+| `PORT` | Yes | Port the Express server listens on (use `8080` on Replit) |
+| `MCP_CLIENT_ID` | Yes | Arbitrary string; identifies this OAuth server to Claude.ai |
+| `MCP_CLIENT_SECRET` | Yes | Arbitrary string; kept server-side, never sent to clients |
+| `MCP_SECRET` | No | If set, `/mcp` requires `?token=<value>` on every request — blocks unauthenticated discovery of the MCP endpoint |
+| `FRONTEND_ORIGIN` | No | Restricts CORS to a specific origin (e.g. `https://your-app.replit.app`); defaults to `*` |
 
 ## Stack
 
@@ -119,11 +138,12 @@ No other secrets required — MCP auth uses OAuth 2.0 Authorization Code + PKCE 
 
 1. Go to **Claude.ai → Settings → Connectors → Add custom connector**
 2. Set the **Remote MCP server URL** to: `https://<deployed-host>/mcp`
+   - If `MCP_SECRET` is configured, append the token: `https://<deployed-host>/mcp?token=<your-secret>`
 3. Save — Claude.ai will redirect you to your server's `/authorize` page
 4. Click **Authorize** — you'll be redirected back to Claude.ai automatically
 5. Claude discovers all 7 tools
 
-No Client ID or Client Secret is required. The OAuth flow uses PKCE for security.
+No Client ID or Client Secret is required from the Claude.ai side. The OAuth flow uses PKCE for security.
 
 **Example things to say to Claude:**
 - _"Log today's session: Push A — bench press 4×8 at 80kg, OHP 3×10 at 50kg"_
@@ -138,4 +158,5 @@ No Client ID or Client Secret is required. The OAuth flow uses PKCE for security
 - `lib/api-zod/src/index.ts` should only export from `./generated/api` — Orval sometimes regenerates it with an extra `./generated/types` line; remove it if it reappears
 - The `zod/v4` subpath import doesn't bundle with esbuild — use `zod` directly in api-server routes
 - Auth codes and access tokens are in-memory — if the API server restarts, active MCP sessions will need to re-authorize (Claude.ai does this automatically on next use)
-- The API server must be running for the frontend to work — both are registered as separate workflows
+- In production the Express server serves the compiled frontend from `artifacts/gym-tracker/dist/public`; if that directory doesn't exist (e.g. after a fresh clone) run the frontend build before starting the server
+- `PUT /plans/:id` replaces all exercises for the plan atomically — always send the full exercises array, not a partial update
