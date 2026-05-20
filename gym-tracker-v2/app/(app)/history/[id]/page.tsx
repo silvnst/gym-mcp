@@ -1,0 +1,247 @@
+'use client'
+import { useParams } from 'next/navigation'
+import { useQuery } from '@tanstack/react-query'
+import Link from 'next/link'
+import { ArrowLeft, Calendar } from 'lucide-react'
+import { format } from 'date-fns'
+
+import { Button } from '@/components/ui/button'
+import { Card, CardContent } from '@/components/ui/card'
+
+type SetRecord = {
+  id: string
+  setNumber: number
+  reps: number | null
+  weightKg: number | null
+}
+
+type SessionExercise = {
+  id: string
+  name: string
+  sortOrder: number
+  targetSets: number | null
+  targetReps: number | null
+  targetWeightKg: number | null
+  sets: SetRecord[]
+}
+
+type Session = {
+  id: string
+  name: string
+  planId: string | null
+  date: string
+  notes: string | null
+  createdAt: string
+  exercises: SessionExercise[]
+}
+
+export default function SessionDetailPage() {
+  const params = useParams()
+  const sessionId = params.id as string
+
+  const { data: session, isLoading } = useQuery<Session>({
+    queryKey: ['sessions', sessionId],
+    queryFn: () => fetch(`/api/sessions/${sessionId}`).then((r) => r.json()),
+    enabled: !!sessionId,
+  })
+
+  if (isLoading) {
+    return (
+      <div className="py-16 text-center text-muted-foreground italic" style={{ fontFamily: 'Georgia, serif' }}>
+        Loading details…
+      </div>
+    )
+  }
+
+  if (!session) {
+    return (
+      <div className="py-16 text-center text-destructive italic" style={{ fontFamily: 'Georgia, serif' }}>
+        Session not found
+      </div>
+    )
+  }
+
+  const exercises = session.exercises ?? []
+
+  const totalVolume = exercises.reduce((acc, exercise) => {
+    return (
+      acc +
+      (exercise.sets ?? []).reduce((setAcc, set) => {
+        const reps = set.reps ?? 0
+        const weight = set.weightKg ?? 0
+        return setAcc + reps * weight
+      }, 0)
+    )
+  }, 0)
+
+  const totalSets = exercises.reduce(
+    (acc, ex) =>
+      acc + (ex.sets ?? []).filter((s) => s.reps != null && s.weightKg != null).length,
+    0
+  )
+
+  return (
+    <div className="space-y-8">
+      <div className="flex items-start gap-4">
+        <Link href="/history">
+          <Button variant="ghost" size="icon" className="-ml-2 shrink-0 mt-1">
+            <ArrowLeft className="h-5 w-5" />
+          </Button>
+        </Link>
+        <div>
+          <h2 className="text-xs font-medium tracking-widest uppercase text-muted-foreground mb-1">
+            History
+          </h2>
+          <h1 className="text-4xl text-foreground" style={{ fontFamily: 'Georgia, serif' }}>
+            Workout Summary
+          </h1>
+        </div>
+      </div>
+
+      <Card className="bg-card border border-border rounded-sm">
+        <CardContent className="p-5">
+          <h2 className="text-2xl mb-2" style={{ fontFamily: 'Georgia, serif' }}>
+            {session.name}
+          </h2>
+          <div className="flex flex-wrap items-center gap-x-6 gap-y-2 text-muted-foreground text-sm">
+            <span className="flex items-center gap-2">
+              <Calendar className="h-4 w-4 text-primary" />
+              {format(new Date(session.date), "EEEE, MMMM d, yyyy")}
+            </span>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3 mt-5">
+            <div className="bg-background rounded-sm p-4 border border-border">
+              <div className="text-[10px] text-muted-foreground uppercase font-medium tracking-widest mb-1">
+                Total Volume
+              </div>
+              <div className="text-2xl text-primary" style={{ fontFamily: 'Georgia, serif' }}>
+                {totalVolume > 0 ? `${totalVolume} kg` : '—'}
+              </div>
+            </div>
+            <div className="bg-background rounded-sm p-4 border border-border">
+              <div className="text-[10px] text-muted-foreground uppercase font-medium tracking-widest mb-1">
+                Sets Completed
+              </div>
+              <div className="text-2xl text-primary" style={{ fontFamily: 'Georgia, serif' }}>
+                {totalSets}
+              </div>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      <div className="space-y-10">
+        <div className="border-b border-border pb-2">
+          <h3 className="text-[10px] font-medium tracking-widest uppercase text-muted-foreground mb-1">
+            Logged
+          </h3>
+          <p className="text-2xl text-foreground" style={{ fontFamily: 'Georgia, serif' }}>
+            Exercises
+          </p>
+        </div>
+
+        {exercises.length === 0 ? (
+          <div className="text-muted-foreground italic" style={{ fontFamily: 'Georgia, serif' }}>
+            No exercises logged in this session.
+          </div>
+        ) : (
+          exercises
+            .slice()
+            .sort((a, b) => a.sortOrder - b.sortOrder)
+            .map((exercise, index) => {
+              const allSets = (exercise.sets ?? [])
+                .slice()
+                .sort((a, b) => a.setNumber - b.setNumber)
+              const hasTarget =
+                exercise.targetReps != null ||
+                exercise.targetWeightKg != null ||
+                exercise.targetSets != null
+
+              return (
+                <div key={exercise.id} className="space-y-3">
+                  <div className="flex items-baseline justify-between gap-3 flex-wrap">
+                    <div className="flex items-baseline gap-2">
+                      <span
+                        className="text-xl text-muted-foreground"
+                        style={{ fontFamily: 'Georgia, serif' }}
+                      >
+                        {index + 1}.
+                      </span>
+                      <h4 className="text-2xl text-foreground" style={{ fontFamily: 'Georgia, serif' }}>
+                        {exercise.name}
+                      </h4>
+                    </div>
+                    {hasTarget && (
+                      <span className="text-xs font-medium text-primary">
+                        Target: {exercise.targetSets ?? '—'}×{exercise.targetReps ?? '—'}
+                        {exercise.targetWeightKg ? ` @ ${exercise.targetWeightKg}kg` : ''}
+                      </span>
+                    )}
+                  </div>
+
+                  {allSets.length === 0 ? (
+                    <p className="text-sm text-muted-foreground italic pl-6">No sets logged.</p>
+                  ) : (
+                    <div className="rounded-sm border border-border/50 overflow-hidden">
+                      <div className="grid grid-cols-[2.5rem_1fr_1fr_1fr] text-[10px] font-medium tracking-widest uppercase text-muted-foreground bg-muted/50 px-3 py-2 gap-2">
+                        <div className="text-center">Set</div>
+                        <div className="text-right">kg</div>
+                        <div className="text-right">Reps</div>
+                        <div className="text-right">Vol</div>
+                      </div>
+                      <div className="divide-y divide-border/30">
+                        {allSets.map((set) => {
+                          const vol =
+                            set.reps != null && set.weightKg != null
+                              ? set.reps * set.weightKg
+                              : null
+                          const isComplete = set.reps != null && set.weightKg != null
+
+                          return (
+                            <div
+                              key={set.id}
+                              className={`grid grid-cols-[2.5rem_1fr_1fr_1fr] gap-2 px-3 py-2.5 text-sm items-center ${
+                                isComplete ? 'bg-card' : 'bg-muted/10'
+                              }`}
+                            >
+                              <div
+                                className="text-center text-muted-foreground text-xs"
+                                style={{ fontFamily: 'Georgia, serif' }}
+                              >
+                                {set.setNumber}
+                              </div>
+                              <div className="text-right font-medium text-foreground">
+                                {set.weightKg ?? (
+                                  <span className="text-muted-foreground/40">—</span>
+                                )}
+                              </div>
+                              <div className="text-right font-medium text-foreground">
+                                {set.reps ?? (
+                                  <span className="text-muted-foreground/40">—</span>
+                                )}
+                              </div>
+                              <div
+                                className="text-right text-primary/80 text-xs"
+                                style={{ fontFamily: 'Georgia, serif' }}
+                              >
+                                {vol != null && vol > 0 ? (
+                                  vol
+                                ) : (
+                                  <span className="text-muted-foreground/40">—</span>
+                                )}
+                              </div>
+                            </div>
+                          )
+                        })}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )
+            })
+        )}
+      </div>
+    </div>
+  )
+}

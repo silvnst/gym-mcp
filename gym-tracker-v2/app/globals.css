@@ -1,26 +1,117 @@
 @import "tailwindcss";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
+@custom-variant dark (&:is(.dark *));
 
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --color-background: hsl(var(--background));
+  --color-foreground: hsl(var(--foreground));
+  --color-border: hsl(var(--border));
+  --color-input: hsl(var(--input));
+  --color-ring: hsl(var(--ring));
+
+  --color-card: hsl(var(--card));
+  --color-card-foreground: hsl(var(--card-foreground));
+
+  --color-popover: hsl(var(--popover));
+  --color-popover-foreground: hsl(var(--popover-foreground));
+
+  --color-primary: hsl(var(--primary));
+  --color-primary-foreground: hsl(var(--primary-foreground));
+
+  --color-secondary: hsl(var(--secondary));
+  --color-secondary-foreground: hsl(var(--secondary-foreground));
+
+  --color-muted: hsl(var(--muted));
+  --color-muted-foreground: hsl(var(--muted-foreground));
+
+  --color-accent: hsl(var(--accent));
+  --color-accent-foreground: hsl(var(--accent-foreground));
+
+  --color-destructive: hsl(var(--destructive));
+  --color-destructive-foreground: hsl(var(--destructive-foreground));
+
+  --font-sans: var(--app-font-sans);
+  --font-serif: var(--app-font-serif);
+  --font-mono: var(--app-font-mono);
+
+  --radius-sm: calc(var(--radius) - 2px);
+  --radius-md: var(--radius);
+  --radius-lg: calc(var(--radius) + 2px);
+  --radius-xl: calc(var(--radius) + 6px);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+:root {
+  --background: 35 50% 94%;
+  --foreground: 27 15% 9%;
+
+  --border: 35 20% 80%;
+  --input: 35 20% 80%;
+  --ring: 22 72% 44%;
+
+  --card: 35 45% 97%;
+  --card-foreground: 27 15% 9%;
+
+  --popover: 35 45% 97%;
+  --popover-foreground: 27 15% 9%;
+
+  --primary: 22 72% 44%;
+  --primary-foreground: 35 50% 94%;
+
+  --secondary: 27 15% 9%;
+  --secondary-foreground: 35 50% 94%;
+
+  --muted: 35 25% 88%;
+  --muted-foreground: 27 10% 40%;
+
+  --accent: 35 25% 88%;
+  --accent-foreground: 27 15% 9%;
+
+  --destructive: 0 65% 45%;
+  --destructive-foreground: 0 0% 100%;
+
+  --app-font-sans: 'Inter', system-ui, sans-serif;
+  --app-font-serif: 'Georgia', serif;
+  --app-font-mono: 'ui-monospace', monospace;
+
+  --radius: 0.25rem;
+}
+
+.dark {
+  --background: 27 15% 9%;
+  --foreground: 35 50% 94%;
+
+  --border: 27 10% 22%;
+  --input: 27 10% 22%;
+  --ring: 22 72% 50%;
+
+  --card: 27 14% 12%;
+  --card-foreground: 35 50% 94%;
+
+  --popover: 27 14% 12%;
+  --popover-foreground: 35 50% 94%;
+
+  --primary: 22 72% 50%;
+  --primary-foreground: 27 15% 9%;
+
+  --secondary: 35 50% 94%;
+  --secondary-foreground: 27 15% 9%;
+
+  --muted: 27 10% 22%;
+  --muted-foreground: 35 15% 70%;
+
+  --accent: 27 10% 22%;
+  --accent-foreground: 35 50% 94%;
+
+  --destructive: 0 60% 50%;
+  --destructive-foreground: 0 0% 100%;
+}
+
+@layer base {
+  * {
+    @apply border-border;
   }
-}
-
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  body {
+    @apply bg-background text-foreground antialiased;
+    font-family: var(--app-font-sans);
+  }
 }
