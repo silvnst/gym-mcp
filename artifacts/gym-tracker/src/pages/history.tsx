@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useListSessions } from "@workspace/api-client-react";
 import { Link } from "wouter";
 import { Calendar } from "lucide-react";
-import { format } from "date-fns";
+import { format, parseISO } from "date-fns";
 
 const PAGE_SIZE = 10;
 
@@ -40,7 +40,7 @@ export default function HistoryPage() {
         <>
           <div className="space-y-6">
             {sessions?.map((session) => {
-              const d = new Date(session.date);
+              const d = parseISO(session.date);
               return (
                 <Link
                   key={session.id}

@@ -4,7 +4,9 @@ import tailwindcss from "@tailwindcss/vite";
 import path from "path";
 import runtimeErrorOverlay from "@replit/vite-plugin-runtime-error-modal";
 
-const port = Number(process.env.PORT) || 5173;
+// Dev server always runs on 5173 so it doesn't collide with the API server on $PORT (8080).
+// The API server dev proxy forwards non-API traffic here.
+const port = 5173;
 const basePath = process.env.BASE_PATH || "/";
 
 export default defineConfig({

@@ -2,6 +2,7 @@ import { useListPlans, useCreateSession, getListSessionsQueryKey } from "@worksp
 import { useQueryClient } from "@tanstack/react-query";
 import { useLocation } from "wouter";
 import { Play } from "lucide-react";
+import { format } from "date-fns";
 import { useToast } from "@/hooks/use-toast";
 
 export default function StartSessionPage() {
@@ -20,7 +21,7 @@ export default function StartSessionPage() {
         data: {
           planId: plan.id,
           name: plan.name,
-          date: new Date().toISOString(),
+          date: format(new Date(), "yyyy-MM-dd"),
           exercises: plan.exercises.map((e) => ({
             name: e.name,
             sortOrder: e.sortOrder,
@@ -46,7 +47,7 @@ export default function StartSessionPage() {
       {
         data: {
           name: "Free Session",
-          date: new Date().toISOString(),
+          date: format(new Date(), "yyyy-MM-dd"),
           exercises: [],
         },
       },
