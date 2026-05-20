@@ -320,14 +320,38 @@ function SetRow({
   const lastSavedReps = useRef(reps);
   const lastSavedWeight = useRef(weight);
 
+  // Per-field interaction tracking for the current focus session.
+  // touched: the field was focused at least once (reset on focus).
+  // dirty: the user typed something (reset on focus, set on onChange).
+  // Placeholder promotion only fires when touched && !dirty && field is empty.
+  const weightTouched = useRef(false);
+  const weightDirty = useRef(false);
+  const repsTouched = useRef(false);
+  const repsDirty = useRef(false);
+
   const handleSave = () => {
-    if (reps === lastSavedReps.current && weight === lastSavedWeight.current) return;
+    let effectiveWeight = weight;
+    let effectiveReps = reps;
 
-    lastSavedReps.current = reps;
-    lastSavedWeight.current = weight;
+    // Promote placeholder only when the user explicitly focused this field
+    // and left without typing anything.
+    if (effectiveWeight === "" && weightTouched.current && !weightDirty.current && set.lastWeightKg != null) {
+      effectiveWeight = set.lastWeightKg.toString();
+    }
+    if (effectiveReps === "" && repsTouched.current && !repsDirty.current && set.lastReps != null) {
+      effectiveReps = set.lastReps.toString();
+    }
 
-    const parsedReps = reps ? parseInt(reps, 10) : null;
-    const parsedWeight = weight ? parseFloat(weight) : null;
+    if (effectiveReps === lastSavedReps.current && effectiveWeight === lastSavedWeight.current) return;
+
+    lastSavedReps.current = effectiveReps;
+    lastSavedWeight.current = effectiveWeight;
+
+    if (effectiveWeight !== weight) setWeight(effectiveWeight);
+    if (effectiveReps !== reps) setReps(effectiveReps);
+
+    const parsedReps = effectiveReps ? parseInt(effectiveReps, 10) : null;
+    const parsedWeight = effectiveWeight ? parseFloat(effectiveWeight) : null;
     updateSet.mutate(
       {
         id: set.id,
@@ -371,7 +395,8 @@ function SetRow({
         type="text"
         inputMode="decimal"
         value={weight}
-        onChange={(e) => setWeight(e.target.value)}
+        onFocus={() => { weightTouched.current = true; weightDirty.current = false; }}
+        onChange={(e) => { weightDirty.current = true; setWeight(e.target.value); }}
         onBlur={handleSave}
         onKeyDown={handleKeyDown}
         placeholder={(set.lastWeightKg ?? targetWeight ?? "—").toString()}
@@ -383,7 +408,8 @@ function SetRow({
         type="text"
         inputMode="numeric"
         value={reps}
-        onChange={(e) => setReps(e.target.value)}
+        onFocus={() => { repsTouched.current = true; repsDirty.current = false; }}
+        onChange={(e) => { repsDirty.current = true; setReps(e.target.value); }}
         onBlur={handleSave}
         onKeyDown={handleKeyDown}
         placeholder={(set.lastReps ?? targetReps ?? "—").toString()}
