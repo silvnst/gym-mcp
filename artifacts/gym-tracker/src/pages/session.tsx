@@ -17,6 +17,34 @@ import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
 import type { SetRecord } from "@workspace/api-client-react";
 
+function buildLastSessionSummary(
+  sets: { setNumber: number; lastWeightKg: number | null; lastReps: number | null }[],
+): string | null {
+  const prevSets = sets
+    .filter((s) => s.lastWeightKg != null || s.lastReps != null)
+    .sort((a, b) => a.setNumber - b.setNumber);
+
+  if (prevSets.length === 0) return null;
+
+  const allSameWeight = prevSets.every((s) => s.lastWeightKg === prevSets[0]!.lastWeightKg);
+  const allSameReps = prevSets.every((s) => s.lastReps === prevSets[0]!.lastReps);
+
+  if (allSameWeight && allSameReps) {
+    const w = prevSets[0]!.lastWeightKg != null ? `${prevSets[0]!.lastWeightKg}kg` : null;
+    const r = prevSets[0]!.lastReps != null ? `${prevSets[0]!.lastReps} reps` : null;
+    const detail = [w, r].filter(Boolean).join(" × ");
+    return `${prevSets.length} × ${detail}`;
+  }
+
+  return prevSets
+    .map((s) => {
+      const w = s.lastWeightKg != null ? `${s.lastWeightKg}kg` : null;
+      const r = s.lastReps != null ? `${s.lastReps}` : null;
+      return [w, r].filter(Boolean).join("×");
+    })
+    .join(", ");
+}
+
 export default function SessionPage() {
   const params = useParams();
   const [, setLocation] = useLocation();
@@ -159,6 +187,14 @@ export default function SessionPage() {
                   {exercise.targetWeightKg ? ` @ ${exercise.targetWeightKg}kg` : ""}
                 </p>
               )}
+              {(() => {
+                const summary = buildLastSessionSummary(exercise.sets);
+                return summary ? (
+                  <p className="text-xs text-muted-foreground mt-1" data-testid={`last-session-summary-${exercise.id}`}>
+                    Last session: {summary}
+                  </p>
+                ) : null;
+              })()}
             </div>
 
             <div className="space-y-1">
