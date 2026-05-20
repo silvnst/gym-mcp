@@ -1,4 +1,4 @@
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { useParams, useLocation } from "wouter";
 import {
   useGetSession,
@@ -73,6 +73,35 @@ export default function SessionPage() {
       }
     );
   };
+
+  const seededExercises = useRef<Set<string>>(new Set());
+
+  useEffect(() => {
+    if (!session) return;
+    for (const exercise of session.exercises) {
+      const target = exercise.targetSets;
+      if (!target || exercise.sets.length >= target) continue;
+      if (seededExercises.current.has(exercise.id)) continue;
+      seededExercises.current.add(exercise.id);
+      const existingMax =
+        exercise.sets.length === 0
+          ? 0
+          : Math.max(...exercise.sets.map((s) => s.setNumber));
+      for (let i = existingMax + 1; i <= target; i++) {
+        const setNumber = i;
+        addSet.mutate(
+          { id: session.id, data: { sessionExerciseId: exercise.id, setNumber } },
+          {
+            onSuccess: () => {
+              queryClient.invalidateQueries({
+                queryKey: getGetSessionQueryKey(session.id),
+              });
+            },
+          }
+        );
+      }
+    }
+  }, [session]);
 
   const isMutating = useIsMutating();
 
