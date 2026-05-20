@@ -51,26 +51,10 @@ setupMcpRoutes(app);
 const frontendDist = path.join(process.cwd(), "artifacts/gym-tracker/dist/public");
 
 if (fs.existsSync(frontendDist)) {
-  // Production: serve the built React app as static files
   app.use(express.static(frontendDist));
   // Express 5 requires "/{*path}" — plain "*" doesn't match multi-segment paths
   app.get("/{*path}", (_req, res) => {
     res.sendFile(path.join(frontendDist, "index.html"));
-  });
-} else if (process.env["NODE_ENV"] !== "production") {
-  // Development: proxy all remaining requests to the gym-tracker Vite dev server
-  const devTarget = process.env["GYM_TRACKER_DEV_URL"] ?? "http://localhost:5173";
-  import("http-proxy-middleware").then(({ createProxyMiddleware }) => {
-    app.use(
-      "/",
-      createProxyMiddleware({
-        target: devTarget,
-        changeOrigin: true,
-        ws: true,
-        logger: console,
-      }),
-    );
-    logger.info({ target: devTarget }, "Dev proxy active: forwarding / to gym-tracker Vite server");
   });
 }
 
