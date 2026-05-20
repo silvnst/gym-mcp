@@ -502,6 +502,12 @@ components:
         weightKg:
           type: number
           nullable: true
+        lastReps:
+          type: integer
+          nullable: true
+        lastWeightKg:
+          type: number
+          nullable: true
       required:
         - id
         - sessionExerciseId

@@ -278,8 +278,12 @@ function SetRow({
   const updateSet = useUpdateSet();
   const queryClient = useQueryClient();
 
-  const [reps, setReps] = useState(set.reps?.toString() || "");
-  const [weight, setWeight] = useState(set.weightKg?.toString() || "");
+  const [reps, setReps] = useState(
+    set.reps != null ? set.reps.toString() : set.lastReps != null ? set.lastReps.toString() : ""
+  );
+  const [weight, setWeight] = useState(
+    set.weightKg != null ? set.weightKg.toString() : set.lastWeightKg != null ? set.lastWeightKg.toString() : ""
+  );
 
   const lastSavedReps = useRef(reps);
   const lastSavedWeight = useRef(weight);

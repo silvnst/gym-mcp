@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-import { eq, desc } from "drizzle-orm";
+import { eq, desc, and, ne } from "drizzle-orm";
 import { z } from "zod";
 import {
   db,
@@ -22,18 +22,22 @@ function numOrNull(v: string | null | undefined): number | null {
 
 type SessionExerciseWithSets = SessionExercise & { sets: Set[] };
 type SessionWithDetail = Session & { sessionExercises: SessionExerciseWithSets[] };
+type LastSetMap = Map<number, { weightKg: number | null; reps: number | null }>;
 
-function serializeSet(s: Set) {
+function serializeSet(s: Set, lastBySetNumber?: LastSetMap) {
+  const last = lastBySetNumber?.get(s.setNumber);
   return {
     id: s.id,
     sessionExerciseId: s.sessionExerciseId,
     setNumber: s.setNumber,
     reps: s.reps,
     weightKg: numOrNull(s.weightKg),
+    lastReps: last ? last.reps : null,
+    lastWeightKg: last ? last.weightKg : null,
   };
 }
 
-function serializeSessionExercise(se: SessionExerciseWithSets) {
+function serializeSessionExercise(se: SessionExerciseWithSets, lastBySetNumber?: LastSetMap) {
   return {
     id: se.id,
     sessionId: se.sessionId,
@@ -43,20 +47,50 @@ function serializeSessionExercise(se: SessionExerciseWithSets) {
     targetSets: se.targetSets,
     targetReps: se.targetReps,
     targetWeightKg: numOrNull(se.targetWeightKg),
-    sets: se.sets.map(serializeSet),
+    sets: se.sets.map((s) => serializeSet(s, lastBySetNumber)),
   };
 }
 
-function serializeSession(session: SessionWithDetail) {
-  return {
-    id: session.id,
-    planId: session.planId,
-    date: session.date,
-    name: session.name,
-    notes: session.notes,
-    createdAt: session.createdAt,
-    exercises: session.sessionExercises.map(serializeSessionExercise),
-  };
+async function fetchLastSessionSetsForExercises(
+  exerciseNames: string[],
+  currentSessionId: string,
+): Promise<Map<string, LastSetMap>> {
+  if (exerciseNames.length === 0) return new Map();
+
+  const result = new Map<string, LastSetMap>();
+
+  for (const name of exerciseNames) {
+    const lastExercise = await db
+      .select({
+        exerciseId: sessionExercises.id,
+        sessionDate: sessions.date,
+        sessionCreatedAt: sessions.createdAt,
+      })
+      .from(sessionExercises)
+      .innerJoin(sessions, eq(sessionExercises.sessionId, sessions.id))
+      .where(and(eq(sessionExercises.name, name), ne(sessionExercises.sessionId, currentSessionId)))
+      .orderBy(desc(sessions.date), desc(sessions.createdAt))
+      .limit(1);
+
+    if (lastExercise.length === 0) continue;
+
+    const lastExerciseId = lastExercise[0]!.exerciseId;
+    const lastSets = await db.query.sets.findMany({
+      where: eq(sets.sessionExerciseId, lastExerciseId),
+      orderBy: (s, { asc }) => [asc(s.setNumber)],
+    });
+
+    const bySetNumber: LastSetMap = new Map();
+    for (const s of lastSets) {
+      bySetNumber.set(s.setNumber, {
+        weightKg: numOrNull(s.weightKg),
+        reps: s.reps,
+      });
+    }
+    result.set(name, bySetNumber);
+  }
+
+  return result;
 }
 
 async function getSessionWithDetail(sessionId: string) {
@@ -72,7 +106,21 @@ async function getSessionWithDetail(sessionId: string) {
     },
   });
   if (!session) return null;
-  return serializeSession(session);
+
+  const exerciseNames = [...new Set(session.sessionExercises.map((se) => se.name))];
+  const lastSetsMap = await fetchLastSessionSetsForExercises(exerciseNames, sessionId);
+
+  return {
+    id: session.id,
+    planId: session.planId,
+    date: session.date,
+    name: session.name,
+    notes: session.notes,
+    createdAt: session.createdAt,
+    exercises: session.sessionExercises.map((se) =>
+      serializeSessionExercise(se, lastSetsMap.get(se.name)),
+    ),
+  };
 }
 
 const createSessionExerciseSchema = z.object({
@@ -294,13 +342,39 @@ router.post("/sessions/:id/sets", async (req, res) => {
       return;
     }
 
+    let prefillReps: number | null = reps ?? null;
+    let prefillWeightKg: string | null = weightKg != null ? weightKg.toString() : null;
+
+    if (prefillReps === null && prefillWeightKg === null) {
+      const lastExercise = await db
+        .select({ exerciseId: sessionExercises.id })
+        .from(sessionExercises)
+        .innerJoin(sessions, eq(sessionExercises.sessionId, sessions.id))
+        .where(and(eq(sessionExercises.name, se.name), ne(sessionExercises.sessionId, sessionId)))
+        .orderBy(desc(sessions.date), desc(sessions.createdAt))
+        .limit(1);
+
+      if (lastExercise.length > 0) {
+        const lastSet = await db.query.sets.findFirst({
+          where: and(
+            eq(sets.sessionExerciseId, lastExercise[0]!.exerciseId),
+            eq(sets.setNumber, setNumber),
+          ),
+        });
+        if (lastSet) {
+          prefillReps = lastSet.reps;
+          prefillWeightKg = lastSet.weightKg;
+        }
+      }
+    }
+
     const [newSet] = await db
       .insert(sets)
       .values({
         sessionExerciseId,
         setNumber,
-        reps: reps ?? null,
-        weightKg: weightKg != null ? weightKg.toString() : null,
+        reps: prefillReps,
+        weightKg: prefillWeightKg,
       })
       .returning();
 
