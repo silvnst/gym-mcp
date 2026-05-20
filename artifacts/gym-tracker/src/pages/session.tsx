@@ -374,7 +374,7 @@ function SetRow({
         onChange={(e) => setWeight(e.target.value)}
         onBlur={handleSave}
         onKeyDown={handleKeyDown}
-        placeholder={set.lastWeightKg != null ? set.lastWeightKg.toString() : targetWeight ? targetWeight.toString() : "—"}
+        placeholder={(set.lastWeightKg ?? targetWeight ?? "—").toString()}
         data-testid={`input-set-${set.id}-weight`}
         className={`${baseInput} ${inputState} placeholder:text-muted-foreground/40`}
       />
@@ -386,7 +386,7 @@ function SetRow({
         onChange={(e) => setReps(e.target.value)}
         onBlur={handleSave}
         onKeyDown={handleKeyDown}
-        placeholder={set.lastReps != null ? set.lastReps.toString() : targetReps ? targetReps.toString() : "—"}
+        placeholder={(set.lastReps ?? targetReps ?? "—").toString()}
         data-testid={`input-set-${set.id}-reps`}
         className={`${baseInput} ${inputState} placeholder:text-muted-foreground/40`}
       />

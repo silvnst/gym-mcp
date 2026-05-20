@@ -342,39 +342,13 @@ router.post("/sessions/:id/sets", async (req, res) => {
       return;
     }
 
-    let prefillReps: number | null = reps ?? null;
-    let prefillWeightKg: string | null = weightKg != null ? weightKg.toString() : null;
-
-    if (prefillReps === null && prefillWeightKg === null) {
-      const lastExercise = await db
-        .select({ exerciseId: sessionExercises.id })
-        .from(sessionExercises)
-        .innerJoin(sessions, eq(sessionExercises.sessionId, sessions.id))
-        .where(and(eq(sessionExercises.name, se.name), ne(sessionExercises.sessionId, sessionId)))
-        .orderBy(desc(sessions.date), desc(sessions.createdAt))
-        .limit(1);
-
-      if (lastExercise.length > 0) {
-        const lastSet = await db.query.sets.findFirst({
-          where: and(
-            eq(sets.sessionExerciseId, lastExercise[0]!.exerciseId),
-            eq(sets.setNumber, setNumber),
-          ),
-        });
-        if (lastSet) {
-          prefillReps = lastSet.reps;
-          prefillWeightKg = lastSet.weightKg;
-        }
-      }
-    }
-
     const [newSet] = await db
       .insert(sets)
       .values({
         sessionExerciseId,
         setNumber,
-        reps: prefillReps,
-        weightKg: prefillWeightKg,
+        reps: reps ?? null,
+        weightKg: weightKg != null ? weightKg.toString() : null,
       })
       .returning();
 
