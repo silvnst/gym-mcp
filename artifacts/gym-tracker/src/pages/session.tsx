@@ -10,7 +10,7 @@ import {
   getListSessionsQueryKey,
 } from "@workspace/api-client-react";
 import { useQueryClient, useIsMutating } from "@tanstack/react-query";
-import { Check, History, Plus, X } from "lucide-react";
+import { Check, Plus, X } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -314,19 +314,8 @@ function SetRow({
   const updateSet = useUpdateSet();
   const queryClient = useQueryClient();
 
-  const [reps, setReps] = useState(
-    set.reps != null ? set.reps.toString() : set.lastReps != null ? set.lastReps.toString() : ""
-  );
-  const [weight, setWeight] = useState(
-    set.weightKg != null ? set.weightKg.toString() : set.lastWeightKg != null ? set.lastWeightKg.toString() : ""
-  );
-
-  const [weightCarriedOver, setWeightCarriedOver] = useState(
-    set.weightKg == null && set.lastWeightKg != null
-  );
-  const [repsCarriedOver, setRepsCarriedOver] = useState(
-    set.reps == null && set.lastReps != null
-  );
+  const [reps, setReps] = useState(set.reps != null ? set.reps.toString() : "");
+  const [weight, setWeight] = useState(set.weightKg != null ? set.weightKg.toString() : "");
 
   const lastSavedReps = useRef(reps);
   const lastSavedWeight = useRef(weight);
@@ -378,45 +367,29 @@ function SetRow({
     >
       <div className="text-center text-sm font-medium font-serif">{set.setNumber}</div>
 
-      <div className="flex flex-col items-center gap-0.5">
-        <input
-          type="text"
-          inputMode="decimal"
-          value={weight}
-          onChange={(e) => { setWeight(e.target.value); setWeightCarriedOver(false); }}
-          onBlur={handleSave}
-          onKeyDown={handleKeyDown}
-          placeholder={targetWeight ? targetWeight.toString() : "—"}
-          data-testid={`input-set-${set.id}-weight`}
-          className={`${baseInput} ${inputState} placeholder:text-muted-foreground/40`}
-        />
-        {weightCarriedOver && (
-          <span className="flex items-center gap-0.5 text-[10px] leading-none text-muted-foreground/50 select-none">
-            <History className="w-2.5 h-2.5" />
-            last
-          </span>
-        )}
-      </div>
+      <input
+        type="text"
+        inputMode="decimal"
+        value={weight}
+        onChange={(e) => setWeight(e.target.value)}
+        onBlur={handleSave}
+        onKeyDown={handleKeyDown}
+        placeholder={set.lastWeightKg != null ? set.lastWeightKg.toString() : targetWeight ? targetWeight.toString() : "—"}
+        data-testid={`input-set-${set.id}-weight`}
+        className={`${baseInput} ${inputState} placeholder:text-muted-foreground/40`}
+      />
 
-      <div className="flex flex-col items-center gap-0.5">
-        <input
-          type="text"
-          inputMode="numeric"
-          value={reps}
-          onChange={(e) => { setReps(e.target.value); setRepsCarriedOver(false); }}
-          onBlur={handleSave}
-          onKeyDown={handleKeyDown}
-          placeholder={targetReps ? targetReps.toString() : "—"}
-          data-testid={`input-set-${set.id}-reps`}
-          className={`${baseInput} ${inputState} placeholder:text-muted-foreground/40`}
-        />
-        {repsCarriedOver && (
-          <span className="flex items-center gap-0.5 text-[10px] leading-none text-muted-foreground/50 select-none">
-            <History className="w-2.5 h-2.5" />
-            last
-          </span>
-        )}
-      </div>
+      <input
+        type="text"
+        inputMode="numeric"
+        value={reps}
+        onChange={(e) => setReps(e.target.value)}
+        onBlur={handleSave}
+        onKeyDown={handleKeyDown}
+        placeholder={set.lastReps != null ? set.lastReps.toString() : targetReps ? targetReps.toString() : "—"}
+        data-testid={`input-set-${set.id}-reps`}
+        className={`${baseInput} ${inputState} placeholder:text-muted-foreground/40`}
+      />
 
       <div className="flex items-center justify-center gap-1">
         {isCompleted ? (
