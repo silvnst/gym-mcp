@@ -97,14 +97,14 @@ export default function HistoryPage() {
                         </div>
                       </div>
                     ) : (
-                      <div className="relative group">
+                      <div className="relative">
                         <Link
                           href={`/history/${session.id}`}
                           data-testid={`card-session-${session.id}`}
                           className="block bg-card border border-border p-4 rounded-sm hover:border-primary transition-colors"
                         >
                           <h3
-                            className="text-lg font-serif text-foreground truncate pr-8"
+                            className="text-lg font-serif text-foreground truncate pr-10"
                             data-testid={`text-session-name-${session.id}`}
                           >
                             {session.name}
@@ -113,12 +113,12 @@ export default function HistoryPage() {
                             <span>{format(d, "h:mm a")}</span>
                           </div>
                         </Link>
-                        {/* Trash button — overlaid top-right, stops link navigation */}
+                        {/* Trash button — always visible, overlaid top-right */}
                         <button
-                          onClick={(e) => { e.preventDefault(); setConfirmId(session.id); }}
+                          onClick={() => setConfirmId(session.id)}
                           data-testid={`button-delete-session-${session.id}`}
                           aria-label="Delete workout"
-                          className="absolute top-3 right-3 p-1.5 text-muted-foreground/30 hover:text-destructive transition-colors opacity-0 group-hover:opacity-100 focus:opacity-100"
+                          className="absolute top-3 right-3 p-1.5 text-muted-foreground/40 hover:text-destructive transition-colors"
                         >
                           <Trash2 className="w-4 h-4" />
                         </button>
