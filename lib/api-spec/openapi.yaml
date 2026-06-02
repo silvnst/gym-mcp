@@ -317,6 +317,60 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
 
+  /exercises/top:
+    get:
+      operationId: getTopExercises
+      tags: [sessions]
+      summary: Get top exercises by session count
+      parameters:
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 5
+      responses:
+        "200":
+          description: Top exercises
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/TopExercise"
+
+  /progress/{exerciseName}:
+    get:
+      operationId: getExerciseProgress
+      tags: [sessions]
+      summary: Get progress data for an exercise
+      parameters:
+        - name: exerciseName
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: metric
+          in: query
+          schema:
+            type: string
+            enum: [maxWeight, totalVolume]
+            default: maxWeight
+      responses:
+        "200":
+          description: Progress data points
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ProgressDataPoint"
+        "400":
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
   /sets/{id}:
     put:
       operationId: updateSet
@@ -659,6 +713,28 @@ components:
       required:
         - sessionExerciseId
         - setNumber
+
+    TopExercise:
+      type: object
+      properties:
+        name:
+          type: string
+        sessionCount:
+          type: integer
+      required:
+        - name
+        - sessionCount
+
+    ProgressDataPoint:
+      type: object
+      properties:
+        date:
+          type: string
+        value:
+          type: number
+      required:
+        - date
+        - value
 
     UpdateSetBody:
       type: object

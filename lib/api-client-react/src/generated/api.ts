@@ -25,14 +25,18 @@ import type {
   CreateSessionExerciseBody,
   CreateSetBody,
   ErrorResponse,
+  GetExerciseProgressParams,
+  GetTopExercisesParams,
   HealthStatus,
   ListSessionsParams,
   PlanWithExercises,
+  ProgressDataPoint,
   SessionExerciseWithSets,
   SessionSummary,
   SessionWithDetail,
   SetRecord,
   SuccessResponse,
+  TopExercise,
   UpdateSetBody
 } from './api.schemas';
 
@@ -938,6 +942,179 @@ export const useAddSet = <TError = ErrorType<ErrorResponse>,
       > => {
       return useMutation(getAddSetMutationOptions(options));
     }
+
+export const getGetTopExercisesUrl = (params?: GetTopExercisesParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : value.toString())
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/exercises/top?${stringifiedParams}` : `/api/exercises/top`
+}
+
+/**
+ * @summary Get top exercises by session count
+ */
+export const getTopExercises = async (params?: GetTopExercisesParams, options?: RequestInit): Promise<TopExercise[]> => {
+
+  return customFetch<TopExercise[]>(getGetTopExercisesUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetTopExercisesQueryKey = (params?: GetTopExercisesParams,) => {
+    return [
+    `/api/exercises/top`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getGetTopExercisesQueryOptions = <TData = Awaited<ReturnType<typeof getTopExercises>>, TError = ErrorType<unknown>>(params?: GetTopExercisesParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getTopExercises>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetTopExercisesQueryKey(params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getTopExercises>>> = ({ signal }) => getTopExercises(params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getTopExercises>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetTopExercisesQueryResult = NonNullable<Awaited<ReturnType<typeof getTopExercises>>>
+export type GetTopExercisesQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary Get top exercises by session count
+ */
+
+export function useGetTopExercises<TData = Awaited<ReturnType<typeof getTopExercises>>, TError = ErrorType<unknown>>(
+ params?: GetTopExercisesParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getTopExercises>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetTopExercisesQueryOptions(params,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+
+export const getGetExerciseProgressUrl = (exerciseName: string,
+    params?: GetExerciseProgressParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : value.toString())
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/progress/${exerciseName}?${stringifiedParams}` : `/api/progress/${exerciseName}`
+}
+
+/**
+ * @summary Get progress data for an exercise
+ */
+export const getExerciseProgress = async (exerciseName: string,
+    params?: GetExerciseProgressParams, options?: RequestInit): Promise<ProgressDataPoint[]> => {
+
+  return customFetch<ProgressDataPoint[]>(getGetExerciseProgressUrl(exerciseName,params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetExerciseProgressQueryKey = (exerciseName: string,
+    params?: GetExerciseProgressParams,) => {
+    return [
+    `/api/progress/${exerciseName}`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getGetExerciseProgressQueryOptions = <TData = Awaited<ReturnType<typeof getExerciseProgress>>, TError = ErrorType<ErrorResponse>>(exerciseName: string,
+    params?: GetExerciseProgressParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getExerciseProgress>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetExerciseProgressQueryKey(exerciseName,params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getExerciseProgress>>> = ({ signal }) => getExerciseProgress(exerciseName,params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: !!(exerciseName), ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getExerciseProgress>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetExerciseProgressQueryResult = NonNullable<Awaited<ReturnType<typeof getExerciseProgress>>>
+export type GetExerciseProgressQueryError = ErrorType<ErrorResponse>
+
+
+/**
+ * @summary Get progress data for an exercise
+ */
+
+export function useGetExerciseProgress<TData = Awaited<ReturnType<typeof getExerciseProgress>>, TError = ErrorType<ErrorResponse>>(
+ exerciseName: string,
+    params?: GetExerciseProgressParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getExerciseProgress>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetExerciseProgressQueryOptions(exerciseName,params,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
 
 export const getUpdateSetUrl = (id: string,) => {
 

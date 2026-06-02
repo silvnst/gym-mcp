@@ -116,6 +116,16 @@ export interface CreateSetBody {
   weightKg?: number | null;
 }
 
+export interface TopExercise {
+  name: string;
+  sessionCount: number;
+}
+
+export interface ProgressDataPoint {
+  date: string;
+  value: number;
+}
+
 export interface UpdateSetBody {
   reps?: number | null;
   weightKg?: number | null;
@@ -126,4 +136,20 @@ export type ListSessionsParams = {
 limit?: number;
 offset?: number;
 };
+
+export type GetTopExercisesParams = {
+limit?: number;
+};
+
+export type GetExerciseProgressParams = {
+metric?: GetExerciseProgressMetric;
+};
+
+export type GetExerciseProgressMetric = typeof GetExerciseProgressMetric[keyof typeof GetExerciseProgressMetric];
+
+
+export const GetExerciseProgressMetric = {
+  maxWeight: 'maxWeight',
+  totalVolume: 'totalVolume',
+} as const;
 

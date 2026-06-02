@@ -253,6 +253,42 @@ export const AddSetBody = zod.object({
 
 
 /**
+ * @summary Get top exercises by session count
+ */
+export const getTopExercisesQueryLimitDefault = 5;
+
+export const GetTopExercisesQueryParams = zod.object({
+  "limit": zod.coerce.number().default(getTopExercisesQueryLimitDefault)
+})
+
+export const GetTopExercisesResponseItem = zod.object({
+  "name": zod.string(),
+  "sessionCount": zod.number()
+})
+export const GetTopExercisesResponse = zod.array(GetTopExercisesResponseItem)
+
+
+/**
+ * @summary Get progress data for an exercise
+ */
+export const GetExerciseProgressParams = zod.object({
+  "exerciseName": zod.coerce.string()
+})
+
+export const getExerciseProgressQueryMetricDefault = `maxWeight`;
+
+export const GetExerciseProgressQueryParams = zod.object({
+  "metric": zod.enum(['maxWeight', 'totalVolume']).default(getExerciseProgressQueryMetricDefault)
+})
+
+export const GetExerciseProgressResponseItem = zod.object({
+  "date": zod.string(),
+  "value": zod.number()
+})
+export const GetExerciseProgressResponse = zod.array(GetExerciseProgressResponseItem)
+
+
+/**
  * @summary Update a set
  */
 export const UpdateSetParams = zod.object({
