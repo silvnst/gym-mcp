@@ -1,19 +1,40 @@
-import { useParams } from "wouter";
-import { useGetSession, getGetSessionQueryKey } from "@workspace/api-client-react";
+import { useState } from "react";
+import { useParams, useLocation } from "wouter";
+import { useGetSession, useDeleteSession, getGetSessionQueryKey, getListSessionsQueryKey } from "@workspace/api-client-react";
 import { Link } from "wouter";
-import { ArrowLeft, Calendar } from "lucide-react";
+import { ArrowLeft, Calendar, Trash2 } from "lucide-react";
 import { format } from "date-fns";
+import { useQueryClient } from "@tanstack/react-query";
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import { useToast } from "@/hooks/use-toast";
 
 export default function SessionDetailPage() {
   const params = useParams();
+  const [, setLocation] = useLocation();
+  const [confirming, setConfirming] = useState(false);
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
 
   const { data: session, isLoading } = useGetSession(params.id as string, {
     query: {
       enabled: !!params.id,
       queryKey: getGetSessionQueryKey(params.id as string),
+    },
+  });
+
+  const deleteSession = useDeleteSession({
+    mutation: {
+      onSuccess: () => {
+        queryClient.invalidateQueries({ queryKey: getListSessionsQueryKey() });
+        toast({ title: "Workout deleted" });
+        setLocation("/history");
+      },
+      onError: () => {
+        toast({ title: "Failed to delete workout", variant: "destructive" });
+        setConfirming(false);
+      },
     },
   });
 
@@ -49,10 +70,38 @@ export default function SessionDetailPage() {
             <ArrowLeft className="h-5 w-5" />
           </Button>
         </Link>
-        <div>
+        <div className="flex-1 min-w-0">
           <h2 className="text-xs font-medium tracking-widest uppercase text-muted-foreground mb-1">History</h2>
           <h1 className="text-4xl font-serif text-foreground">Workout Summary</h1>
         </div>
+        {/* Delete button */}
+        {confirming ? (
+          <div className="flex gap-2 items-center shrink-0 mt-1">
+            <button
+              onClick={() => setConfirming(false)}
+              className="text-xs font-medium text-muted-foreground px-3 py-1.5 border border-border rounded-sm hover:border-primary transition-colors"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={() => deleteSession.mutate({ id: session.id })}
+              disabled={deleteSession.isPending}
+              className="text-xs font-medium text-destructive-foreground bg-destructive px-3 py-1.5 rounded-sm disabled:opacity-60"
+            >
+              {deleteSession.isPending ? "Deleting…" : "Delete"}
+            </button>
+          </div>
+        ) : (
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={() => setConfirming(true)}
+            data-testid="button-delete-session"
+            className="shrink-0 mt-1 text-muted-foreground/40 hover:text-destructive"
+          >
+            <Trash2 className="h-4 w-4" />
+          </Button>
+        )}
       </div>
 
       {/* Session overview card */}
