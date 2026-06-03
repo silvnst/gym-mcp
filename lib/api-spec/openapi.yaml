@@ -590,6 +590,9 @@ components:
         targetWeightKg:
           type: number
           nullable: true
+        notes:
+          type: string
+          nullable: true
         sets:
           type: array
           items:

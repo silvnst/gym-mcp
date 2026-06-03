@@ -120,6 +120,7 @@ function HistoryView() {
       <div className="space-y-6">
         {sessions?.map((session) => {
           const d = parseISO(session.date);
+          const timeD = new Date(session.createdAt);
           const isConfirming = confirmId === session.id;
 
           return (
@@ -169,7 +170,7 @@ function HistoryView() {
                         {session.name}
                       </h3>
                       <div className="flex flex-wrap gap-x-3 gap-y-1 text-sm text-muted-foreground mt-1">
-                        <span>{format(d, "h:mm a")}</span>
+                        <span>{format(timeD, "h:mm a")}</span>
                       </div>
                     </Link>
                     <button

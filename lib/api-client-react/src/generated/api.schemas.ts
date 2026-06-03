@@ -70,6 +70,7 @@ export interface SessionExerciseWithSets {
   targetSets?: number | null;
   targetReps?: number | null;
   targetWeightKg?: number | null;
+  notes?: string | null;
   sets: SetRecord[];
 }
 

@@ -10,11 +10,12 @@ import {
   getListSessionsQueryKey,
 } from "@workspace/api-client-react";
 import { useQueryClient, useIsMutating } from "@tanstack/react-query";
-import { Check, Plus, X } from "lucide-react";
+import { Check, Plus, X, WifiOff } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
+import { useOnlineStatus } from "@/hooks/use-online-status";
 import type { SetRecord } from "@workspace/api-client-react";
 
 function buildLastSessionSummary(
@@ -45,11 +46,30 @@ function buildLastSessionSummary(
     .join(", ");
 }
 
+function useElapsedTime(startIso: string) {
+  const [elapsed, setElapsed] = useState(() => formatElapsed(startIso));
+  useEffect(() => {
+    const id = setInterval(() => setElapsed(formatElapsed(startIso)), 1000);
+    return () => clearInterval(id);
+  }, [startIso]);
+  return elapsed;
+}
+
+function formatElapsed(startIso: string): string {
+  const totalSeconds = Math.max(0, Math.floor((Date.now() - new Date(startIso).getTime()) / 1000));
+  const h = Math.floor(totalSeconds / 3600);
+  const m = Math.floor((totalSeconds % 3600) / 60);
+  const s = totalSeconds % 60;
+  if (h > 0) return `${h}h ${m}m`;
+  return `${m}m ${s.toString().padStart(2, "0")}s`;
+}
+
 export default function SessionPage() {
   const params = useParams();
   const [, setLocation] = useLocation();
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const isOnline = useOnlineStatus();
 
   const { data: session, isLoading } = useGetSession(params.id as string, {
     query: {
@@ -57,6 +77,8 @@ export default function SessionPage() {
       queryKey: getGetSessionQueryKey(params.id as string),
     },
   });
+
+  const elapsed = useElapsedTime(session?.createdAt ?? new Date().toISOString());
 
   const addSet = useAddSet();
   const deleteSet = useDeleteSet();
@@ -87,6 +109,9 @@ export default function SessionPage() {
         onSuccess: () => {
           queryClient.invalidateQueries({ queryKey: getGetSessionQueryKey(params.id as string) });
         },
+        onError: () => {
+          toast({ title: "Failed to add set", description: isOnline ? "Try again." : "You appear to be offline.", variant: "destructive" });
+        },
       }
     );
   };
@@ -97,6 +122,9 @@ export default function SessionPage() {
       {
         onSuccess: () => {
           queryClient.invalidateQueries({ queryKey: getGetSessionQueryKey(params.id as string) });
+        },
+        onError: () => {
+          toast({ title: "Failed to delete set", variant: "destructive" });
         },
       }
     );
@@ -151,10 +179,20 @@ export default function SessionPage() {
 
   return (
     <div className="-mt-10 -mx-6">
+      {!isOnline && (
+        <div className="bg-amber-500/10 border-b border-amber-500/30 px-6 py-2 flex items-center gap-2 text-xs text-amber-600 font-medium">
+          <WifiOff className="w-3.5 h-3.5 shrink-0" />
+          Offline — changes may not be saved until you reconnect
+        </div>
+      )}
+
       {/* Sticky editorial header */}
       <div className="sticky top-0 z-30 bg-background/95 backdrop-blur border-b border-border px-6 py-4 flex justify-between items-center">
         <div className="min-w-0">
-          <h2 className="text-[10px] font-medium tracking-widest uppercase text-primary mb-0.5">Active</h2>
+          <div className="flex items-center gap-3 mb-0.5">
+            <h2 className="text-xs font-medium tracking-widest uppercase text-primary">Active</h2>
+            <span className="text-xs text-muted-foreground font-mono">{elapsed}</span>
+          </div>
           <h1
             className="text-xl font-serif font-medium truncate"
             data-testid="text-session-name"
@@ -181,8 +219,11 @@ export default function SessionPage() {
                 <span className="text-xl font-serif text-muted-foreground">{index + 1}.</span>
                 <h3 className="text-2xl font-serif truncate">{exercise.name}</h3>
               </div>
+              {exercise.notes && (
+                <p className="text-sm text-muted-foreground/80 italic mt-1 pl-7">{exercise.notes}</p>
+              )}
               {(exercise.targetSets || exercise.targetReps || exercise.targetWeightKg) && (
-                <p className="text-sm text-primary font-medium mt-1">
+                <p className="text-sm text-primary font-medium mt-1 pl-7">
                   Target: {exercise.targetSets || "—"} × {exercise.targetReps || "—"}
                   {exercise.targetWeightKg ? ` @ ${exercise.targetWeightKg}kg` : ""}
                 </p>
@@ -198,7 +239,7 @@ export default function SessionPage() {
             </div>
 
             <div className="space-y-1">
-              <div className="grid grid-cols-[3rem_1fr_1fr_3rem] gap-2 px-2 text-[10px] font-medium text-muted-foreground tracking-widest uppercase mb-1">
+              <div className="grid grid-cols-[3rem_1fr_1fr_3rem] gap-2 px-2 text-xs font-medium text-muted-foreground tracking-widest uppercase mb-1">
                 <div className="text-center">Set</div>
                 <div className="text-center">kg</div>
                 <div className="text-center">Reps</div>
@@ -270,7 +311,7 @@ function AddExerciseRow({
 
   return (
     <div className="border-t border-dashed border-border pt-6">
-      <h3 className="text-[10px] font-medium text-muted-foreground uppercase tracking-widest mb-3">
+      <h3 className="text-xs font-medium text-muted-foreground uppercase tracking-widest mb-3">
         Add Exercise
       </h3>
       <div className="flex gap-2">
@@ -313,6 +354,7 @@ function SetRow({
 }) {
   const updateSet = useUpdateSet();
   const queryClient = useQueryClient();
+  const { toast } = useToast();
 
   const [reps, setReps] = useState(set.reps != null ? set.reps.toString() : "");
   const [weight, setWeight] = useState(set.weightKg != null ? set.weightKg.toString() : "");
@@ -363,6 +405,9 @@ function SetRow({
       {
         onSuccess: () => {
           queryClient.invalidateQueries({ queryKey: getGetSessionQueryKey(sessionId) });
+        },
+        onError: () => {
+          toast({ title: "Failed to save set", description: "Check your connection and try again.", variant: "destructive" });
         },
       }
     );

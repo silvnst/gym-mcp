@@ -3,7 +3,7 @@ import { useParams, useLocation } from "wouter";
 import { useGetSession, useDeleteSession, getGetSessionQueryKey, getListSessionsQueryKey } from "@workspace/api-client-react";
 import { Link } from "wouter";
 import { ArrowLeft, Calendar, Trash2 } from "lucide-react";
-import { format } from "date-fns";
+import { format, parseISO } from "date-fns";
 import { useQueryClient } from "@tanstack/react-query";
 
 import { Button } from "@/components/ui/button";
@@ -111,17 +111,17 @@ export default function SessionDetailPage() {
           <div className="flex flex-wrap items-center gap-x-6 gap-y-2 text-muted-foreground text-sm">
             <span className="flex items-center gap-2">
               <Calendar className="h-4 w-4 text-primary" />
-              {format(new Date(session.date), "EEEE, MMMM d, yyyy 'at' h:mm a")}
+              {format(parseISO(session.date), "EEEE, MMMM d, yyyy")} at {format(new Date(session.createdAt), "h:mm a")}
             </span>
           </div>
 
           <div className="grid grid-cols-2 gap-3 mt-5">
             <div className="bg-background rounded-sm p-4 border border-border">
-              <div className="text-[10px] text-muted-foreground uppercase font-medium tracking-widest mb-1">Total Volume</div>
+              <div className="text-xs text-muted-foreground uppercase font-medium tracking-widest mb-1">Total Volume</div>
               <div className="text-2xl font-serif text-primary">{totalVolume > 0 ? `${totalVolume} kg` : "—"}</div>
             </div>
             <div className="bg-background rounded-sm p-4 border border-border">
-              <div className="text-[10px] text-muted-foreground uppercase font-medium tracking-widest mb-1">Sets Completed</div>
+              <div className="text-xs text-muted-foreground uppercase font-medium tracking-widest mb-1">Sets Completed</div>
               <div className="text-2xl font-serif text-primary">{totalSets}</div>
             </div>
           </div>
@@ -131,7 +131,7 @@ export default function SessionDetailPage() {
       {/* Exercises section */}
       <div className="space-y-10">
         <div className="border-b border-border pb-2">
-          <h3 className="text-[10px] font-medium tracking-widest uppercase text-muted-foreground mb-1">Logged</h3>
+          <h3 className="text-xs font-medium tracking-widest uppercase text-muted-foreground mb-1">Logged</h3>
           <p className="text-2xl font-serif text-foreground">Exercises</p>
         </div>
 
@@ -165,7 +165,7 @@ export default function SessionDetailPage() {
                   ) : (
                     <div className="rounded-sm border border-border/50 overflow-hidden">
                       {/* Mobile-optimised 4-column table: Set | kg | Reps | Vol */}
-                      <div className="grid grid-cols-[2.5rem_1fr_1fr_1fr] text-[10px] font-medium tracking-widest uppercase text-muted-foreground bg-muted/50 px-3 py-2 gap-2">
+                      <div className="grid grid-cols-[2.5rem_1fr_1fr_1fr] text-xs font-medium tracking-widest uppercase text-muted-foreground bg-muted/50 px-3 py-2 gap-2">
                         <div className="text-center">Set</div>
                         <div className="text-right">kg</div>
                         <div className="text-right">Reps</div>

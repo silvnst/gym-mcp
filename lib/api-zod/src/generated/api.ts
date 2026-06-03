@@ -195,6 +195,7 @@ export const GetSessionResponse = zod.object({
   "targetSets": zod.number().nullish(),
   "targetReps": zod.number().nullish(),
   "targetWeightKg": zod.number().nullish(),
+  "notes": zod.string().nullish(),
   "sets": zod.array(zod.object({
   "id": zod.string(),
   "sessionExerciseId": zod.string(),
