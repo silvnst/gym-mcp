@@ -1,9 +1,10 @@
 import { useListPlans, useCreateSession, getListSessionsQueryKey } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
-import { useLocation } from "wouter";
-import { Play } from "lucide-react";
+import { Link, useLocation } from "wouter";
+import { Play, ArrowRight } from "lucide-react";
 import { format } from "date-fns";
 import { useToast } from "@/hooks/use-toast";
+import { setActiveSessionId, useActiveSessionId } from "@/hooks/use-active-session";
 
 export default function StartSessionPage() {
   const { data: plans, isLoading } = useListPlans();
@@ -11,6 +12,7 @@ export default function StartSessionPage() {
   const queryClient = useQueryClient();
   const [, setLocation] = useLocation();
   const { toast } = useToast();
+  const activeId = useActiveSessionId();
 
   const handleStartPlan = (planId: string) => {
     const plan = plans?.find((p) => p.id === planId);
@@ -34,6 +36,7 @@ export default function StartSessionPage() {
       },
       {
         onSuccess: (session) => {
+          setActiveSessionId(session.id);
           queryClient.invalidateQueries({ queryKey: getListSessionsQueryKey() });
           setLocation(`/session/${session.id}`);
         },
@@ -53,6 +56,7 @@ export default function StartSessionPage() {
       },
       {
         onSuccess: (session) => {
+          setActiveSessionId(session.id);
           queryClient.invalidateQueries({ queryKey: getListSessionsQueryKey() });
           setLocation(`/session/${session.id}`);
         },
@@ -67,6 +71,17 @@ export default function StartSessionPage() {
         <h2 className="text-xs font-medium tracking-widest uppercase text-muted-foreground mb-1">Train</h2>
         <h1 className="text-4xl font-serif text-foreground">Start Workout</h1>
       </div>
+
+      {activeId && (
+        <Link
+          href={`/session/${activeId}`}
+          data-testid="banner-resume-session"
+          className="w-full bg-secondary text-secondary-foreground font-medium py-4 px-6 rounded-sm flex justify-between items-center mb-4 hover:opacity-90 transition-opacity"
+        >
+          <span className="text-base">Resume active session</span>
+          <ArrowRight className="w-5 h-5 shrink-0" />
+        </Link>
+      )}
 
       <button
         onClick={handleStartAdhoc}

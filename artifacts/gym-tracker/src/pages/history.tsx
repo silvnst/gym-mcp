@@ -7,10 +7,11 @@ import {
   getListSessionsQueryKey,
 } from "@workspace/api-client-react";
 import { Link } from "wouter";
-import { Calendar, Trash2, TrendingUp } from "lucide-react";
+import { Calendar, Trash2, TrendingUp, ArrowRight } from "lucide-react";
 import { format, parseISO } from "date-fns";
 import { useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
+import { useActiveSessionId } from "@/hooks/use-active-session";
 import {
   ResponsiveContainer,
   LineChart,
@@ -72,6 +73,7 @@ function HistoryView() {
   const [confirmId, setConfirmId] = useState<string | null>(null);
   const queryClient = useQueryClient();
   const { toast } = useToast();
+  const activeId = useActiveSessionId();
 
   const { data: sessions, isLoading } = useListSessions(
     { limit: PAGE_SIZE, offset },
@@ -117,6 +119,17 @@ function HistoryView() {
 
   return (
     <>
+      {activeId && (
+        <Link
+          href={`/session/${activeId}`}
+          data-testid="banner-resume-session-history"
+          className="flex justify-between items-center bg-secondary/20 border border-secondary/40 text-secondary-foreground px-4 py-3 rounded-sm mb-6 hover:opacity-90 transition-opacity"
+        >
+          <span className="text-sm font-medium">Active session in progress</span>
+          <ArrowRight className="w-4 h-4 shrink-0" />
+        </Link>
+      )}
+
       <div className="space-y-6">
         {sessions?.map((session) => {
           const d = parseISO(session.date);

@@ -1,14 +1,18 @@
 import { Link, useLocation } from "wouter";
 import { List, Play, History, WifiOff } from "lucide-react";
 import { useOnlineStatus } from "@/hooks/use-online-status";
+import { useActiveSessionId } from "@/hooks/use-active-session";
 
 export function Layout({ children }: { children: React.ReactNode }) {
   const [location] = useLocation();
   const isOnline = useOnlineStatus();
+  const activeId = useActiveSessionId();
+
+  const startHref = activeId ? `/session/${activeId}` : "/start";
 
   const navItems = [
     { href: "/", label: "Plans", icon: List, match: (l: string) => l === "/" || l.startsWith("/plans") },
-    { href: "/start", label: "Start", icon: Play, match: (l: string) => l === "/start" || l.startsWith("/session") },
+    { href: startHref, label: "Start", icon: Play, match: (l: string) => l === "/start" || l.startsWith("/session") },
     { href: "/history", label: "History", icon: History, match: (l: string) => l.startsWith("/history") },
   ];
 
@@ -41,12 +45,17 @@ export function Layout({ children }: { children: React.ReactNode }) {
                 key={item.href}
                 href={item.href}
                 data-testid={`nav-${item.label.toLowerCase()}`}
-                className={`flex flex-col items-center justify-center gap-1 w-16 h-12 transition-colors ${
+                className={`flex flex-col items-center justify-center gap-1 w-20 h-14 transition-colors ${
                   isActive ? "text-primary" : "text-muted-foreground"
                 }`}
               >
-                <Icon className="w-5 h-5" />
-                <span className="text-[10px] font-medium tracking-widest uppercase">{item.label}</span>
+                <div className="relative">
+                  <Icon className="w-6 h-6" />
+                  {item.label === "Start" && activeId && (
+                    <span className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-primary animate-pulse" />
+                  )}
+                </div>
+                <span className="text-xs font-medium tracking-widest uppercase">{item.label}</span>
               </Link>
             );
           })}

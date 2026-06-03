@@ -16,6 +16,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
 import { useOnlineStatus } from "@/hooks/use-online-status";
+import { setActiveSessionId, clearActiveSessionId } from "@/hooks/use-active-session";
 import type { SetRecord } from "@workspace/api-client-react";
 
 function buildLastSessionSummary(
@@ -130,6 +131,10 @@ export default function SessionPage() {
     );
   };
 
+  useEffect(() => {
+    if (session) setActiveSessionId(session.id);
+  }, [session?.id]);
+
   const seededExercises = useRef<Set<string>>(new Set());
 
   useEffect(() => {
@@ -162,6 +167,7 @@ export default function SessionPage() {
   const isMutating = useIsMutating();
 
   const handleFinish = () => {
+    clearActiveSessionId();
     toast({ title: "Workout saved", description: "Great job." });
     queryClient.invalidateQueries({ queryKey: getListSessionsQueryKey() });
     setLocation("/history");
@@ -172,6 +178,7 @@ export default function SessionPage() {
   }
 
   if (!session) {
+    clearActiveSessionId();
     return <div className="py-16 text-center text-destructive font-serif italic">Session not found</div>;
   }
 
