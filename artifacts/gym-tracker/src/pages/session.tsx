@@ -286,6 +286,8 @@ export default function SessionPage() {
           }
           isPending={addExercise.isPending}
         />
+
+        <SessionNotesInput sessionId={session.id} initialNotes={session.notes} />
       </div>
     </div>
   );
@@ -481,6 +483,49 @@ function SetRow({
           <X className="w-3.5 h-3.5" />
         </button>
       </div>
+    </div>
+  );
+}
+
+function SessionNotesInput({
+  sessionId,
+  initialNotes,
+}: {
+  sessionId: string;
+  initialNotes?: string | null;
+}) {
+  const [notes, setNotes] = useState(initialNotes ?? "");
+  const lastSaved = useRef(notes);
+  const { toast } = useToast();
+
+  const save = async () => {
+    if (notes === lastSaved.current) return;
+    lastSaved.current = notes;
+    try {
+      const res = await fetch(`/api/sessions/${sessionId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ notes: notes.trim() || null }),
+      });
+      if (!res.ok) throw new Error("save failed");
+    } catch {
+      toast({ title: "Failed to save session notes", variant: "destructive" });
+    }
+  };
+
+  return (
+    <div className="border-t border-dashed border-border pt-6">
+      <h3 className="text-xs font-medium text-muted-foreground uppercase tracking-widest mb-3">
+        Session Notes
+      </h3>
+      <textarea
+        value={notes}
+        onChange={(e) => setNotes(e.target.value)}
+        onBlur={save}
+        placeholder="How did it go? Any observations…"
+        rows={3}
+        className="w-full bg-transparent border border-border rounded-sm px-3 py-2.5 text-sm text-foreground placeholder:text-muted-foreground/40 focus:outline-none focus:border-primary resize-none transition-colors"
+      />
     </div>
   );
 }

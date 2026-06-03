@@ -253,6 +253,38 @@ router.get("/sessions/:id", async (req, res) => {
   }
 });
 
+const updateSessionSchema = z.object({
+  notes: z.string().nullable().optional(),
+});
+
+router.patch("/sessions/:id", async (req, res) => {
+  const parsed = updateSessionSchema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: parsed.error.message });
+    return;
+  }
+
+  try {
+    const existing = await db.query.sessions.findFirst({
+      where: eq(sessions.id, req.params.id!),
+    });
+    if (!existing) {
+      res.status(404).json({ error: "Session not found" });
+      return;
+    }
+
+    const [updated] = await db
+      .update(sessions)
+      .set({ notes: parsed.data.notes !== undefined ? parsed.data.notes : existing.notes })
+      .where(eq(sessions.id, req.params.id!))
+      .returning();
+
+    res.json({ id: updated!.id, notes: updated!.notes });
+  } catch {
+    res.status(500).json({ error: "Failed to update session" });
+  }
+});
+
 router.post("/sessions/:id/exercises", async (req, res) => {
   const parsed = createSessionExerciseSchema.safeParse(req.body);
   if (!parsed.success) {
