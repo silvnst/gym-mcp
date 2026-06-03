@@ -46,6 +46,10 @@ export default defineConfig({
     strictPort: true,
     host: "0.0.0.0",
     allowedHosts: true,
+    proxy: {
+      "/api": { target: "http://localhost:8080", changeOrigin: true },
+      "/mcp": { target: "http://localhost:8080", changeOrigin: true },
+    },
     fs: {
       strict: true,
     },

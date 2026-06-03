@@ -10,6 +10,7 @@ import {
   type Session,
   type SessionExercise,
   type Set,
+  type PlanExercise,
 } from "@workspace/db";
 
 const router: IRouter = Router();
@@ -20,7 +21,7 @@ function numOrNull(v: string | null | undefined): number | null {
   return isNaN(n) ? null : n;
 }
 
-type SessionExerciseWithSets = SessionExercise & { sets: Set[] };
+type SessionExerciseWithSets = SessionExercise & { sets: Set[]; planExercise: PlanExercise | null };
 type SessionWithDetail = Session & { sessionExercises: SessionExerciseWithSets[] };
 type LastSetMap = Map<number, { weightKg: number | null; reps: number | null }>;
 
@@ -47,6 +48,7 @@ function serializeSessionExercise(se: SessionExerciseWithSets, lastBySetNumber?:
     targetSets: se.targetSets,
     targetReps: se.targetReps,
     targetWeightKg: numOrNull(se.targetWeightKg),
+    notes: se.planExercise?.notes ?? null,
     sets: se.sets.map((s) => serializeSet(s, lastBySetNumber)),
   };
 }
@@ -101,6 +103,7 @@ async function getSessionWithDetail(sessionId: string) {
         orderBy: (se, { asc }) => [asc(se.sortOrder)],
         with: {
           sets: { orderBy: (s, { asc }) => [asc(s.setNumber)] },
+          planExercise: true,
         },
       },
     },
@@ -250,6 +253,38 @@ router.get("/sessions/:id", async (req, res) => {
   }
 });
 
+const updateSessionSchema = z.object({
+  notes: z.string().nullable().optional(),
+});
+
+router.patch("/sessions/:id", async (req, res) => {
+  const parsed = updateSessionSchema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: parsed.error.message });
+    return;
+  }
+
+  try {
+    const existing = await db.query.sessions.findFirst({
+      where: eq(sessions.id, req.params.id!),
+    });
+    if (!existing) {
+      res.status(404).json({ error: "Session not found" });
+      return;
+    }
+
+    const [updated] = await db
+      .update(sessions)
+      .set({ notes: parsed.data.notes !== undefined ? parsed.data.notes : existing.notes })
+      .where(eq(sessions.id, req.params.id!))
+      .returning();
+
+    res.json({ id: updated!.id, notes: updated!.notes });
+  } catch {
+    res.status(500).json({ error: "Failed to update session" });
+  }
+});
+
 router.post("/sessions/:id/exercises", async (req, res) => {
   const parsed = createSessionExerciseSchema.safeParse(req.body);
   if (!parsed.success) {
@@ -283,7 +318,7 @@ router.post("/sessions/:id/exercises", async (req, res) => {
 
     const result = await db.query.sessionExercises.findFirst({
       where: eq(sessionExercises.id, newExercise.id),
-      with: { sets: true },
+      with: { sets: true, planExercise: true },
     });
 
     res.status(201).json(serializeSessionExercise(result as SessionExerciseWithSets));

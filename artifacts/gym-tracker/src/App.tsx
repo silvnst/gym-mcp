@@ -15,7 +15,10 @@ import SessionDetailPage from "@/pages/session-detail";
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
-      retry: 1,
+      retry: 3,
+      retryDelay: (attempt) => Math.min(1000 * 2 ** attempt, 30000),
+      staleTime: 60 * 1000,
+      gcTime: 10 * 60 * 1000,
       refetchOnWindowFocus: false,
       staleTime: 5 * 60 * 1000,
       gcTime: 24 * 60 * 60 * 1000,
@@ -23,6 +26,10 @@ const queryClient = new QueryClient({
     mutations: {
       retry: 3,
       retryDelay: (attemptIndex) => Math.min(1000 * 2 ** attemptIndex, 30_000),
+    },
+    mutations: {
+      retry: 2,
+      retryDelay: (attempt) => Math.min(1000 * 2 ** attempt, 10000),
     },
   },
 });
